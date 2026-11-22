@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.3.5 - Görsel Stüdyo"
-APP_VERSION = "5.3.5"
+APP_NAME = "Video Studyosu V5.3.6 - Görsel Stüdyo"
+APP_VERSION = "5.3.6"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
