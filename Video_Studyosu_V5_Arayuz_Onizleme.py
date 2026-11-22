@@ -2151,7 +2151,8 @@ class VideoStudio:
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         if automatic_workflow:
             try:
-                ensure_comfyui_running(base_url)\n                ensure_comfyui_running(base_url)
+                ensure_comfyui_running(base_url)
+                ensure_comfyui_running(base_url)
                 workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
                 self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
             except Exception as exc:
