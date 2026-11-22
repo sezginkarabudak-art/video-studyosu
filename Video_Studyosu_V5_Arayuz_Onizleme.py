@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 APP_NAME = "Video Studyosu V5.2 - Siyah Beyaz"
-APP_VERSION = "5.2.0"
+APP_VERSION = "5.2.1"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -329,25 +329,25 @@ class VideoStudio:
         style=ttk.Style()
         try: style.theme_use("clam")
         except: pass
-        bg="#101010"; panel="#1b1b1b"; fg="#f5f5f5"; muted="#bdbdbd"; line="#3a3a3a"
+        bg="#ffffff"; panel="#ffffff"; fg="#111111"; muted="#555555"; line="#c9c9c9"
         self.root.configure(bg=bg)
         style.configure(".",background=bg,foreground=fg,fieldbackground=panel,bordercolor=line,lightcolor=line,darkcolor=line,focuscolor=fg)
         style.configure("TFrame",background=bg)
         style.configure("TLabel",background=bg,foreground=fg)
         style.configure("TLabelframe",background=bg,foreground=fg,bordercolor=line)
         style.configure("TLabelframe.Label",background=bg,foreground=fg)
-        style.configure("TButton",background="#292929",foreground=fg,bordercolor="#555555",padding=(10,6),focuscolor=fg)
-        style.map("TButton",background=[("active","#414141"),("pressed","#555555"),("disabled","#202020")],foreground=[("disabled","#888888")])
+        style.configure("TButton",background="#f0f0f0",foreground=fg,bordercolor="#bdbdbd",padding=(10,6),focuscolor=fg)
+        style.map("TButton",background=[("active","#e5e5e5"),("pressed","#d8d8d8"),("disabled","#f5f5f5")],foreground=[("disabled","#888888")])
         style.configure("TEntry",fieldbackground=panel,foreground=fg,insertcolor=fg)
-        style.configure("TCombobox",fieldbackground=panel,background="#292929",foreground=fg,arrowcolor=fg)
+        style.configure("TCombobox",fieldbackground=panel,background="#f0f0f0",foreground=fg,arrowcolor=fg)
         style.map("TCombobox",fieldbackground=[("readonly",panel)],foreground=[("readonly",fg)],selectbackground=[("readonly","#444444")],selectforeground=[("readonly",fg)])
         style.configure("TRadiobutton",background=bg,foreground=fg)
         style.map("TRadiobutton",background=[("active",bg)],foreground=[("active",fg)])
         style.configure("TCheckbutton",background=bg,foreground=fg)
         style.map("TCheckbutton",background=[("active",bg)],foreground=[("active",fg)])
         style.configure("TNotebook",background=bg,bordercolor=line,tabmargins=(2,4,2,0))
-        style.configure("TNotebook.Tab",background="#242424",foreground=fg,padding=(12,7))
-        style.map("TNotebook.Tab",background=[("selected","#f0f0f0"),("active","#444444")],foreground=[("selected","#111111"),("active",fg)])
+        style.configure("TNotebook.Tab",background="#eeeeee",foreground=fg,padding=(12,7))
+        style.map("TNotebook.Tab",background=[("selected","#ffffff"),("active","#e5e5e5")],foreground=[("selected","#111111"),("active",fg)])
         style.configure("Treeview",background=panel,fieldbackground=panel,foreground=fg)
         style.map("Treeview",background=[("selected","#555555")],foreground=[("selected","#ffffff")])
         style.configure("TProgressbar",background="#eeeeee",troughcolor=panel,bordercolor=line)
@@ -375,7 +375,7 @@ class VideoStudio:
                                     highlightbackground="#444444",highlightcolor="#ffffff",
                                     relief="flat",bd=1)
                 elif isinstance(child, tk.Canvas):
-                    child.configure(bg="#101010",highlightthickness=0)
+                    child.configure(bg="#ffffff",highlightthickness=0)
             except Exception:
                 pass
             self._apply_dark_widgets(child)
