@@ -3,6 +3,11 @@ setlocal EnableExtensions
 chcp 65001 >nul
 title Video Studyosu - Guncelleme
 set "TARGET=%~1"
+if exist "%~dp0manifest.json" (
+  if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -Target "%TARGET%" -Package "%~dp0"
+  exit /b %errorlevel%
+)
 if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
 for %%I in ("%TARGET%") do set "TARGETDIR=%%~dpI"
 if not exist "%TARGETDIR%" mkdir "%TARGETDIR%"
