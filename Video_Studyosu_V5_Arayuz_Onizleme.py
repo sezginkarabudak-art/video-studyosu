@@ -8,7 +8,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Karabudak Film Stüdyoları V5.4.1"
+APP_NAME = "Karabudak Film Stüdyoları V5.4.3"
 APP_VERSION = "5.4.3"
  
 PLATFORM_PROFILES = {
@@ -1526,12 +1526,12 @@ class VideoStudio:
                     dur=(int(m.group(1))*3600+int(m.group(2))*60+float(m.group(3))) if m else max(4,len(scene["text"])/13)
                     frame=str(assets/f"clip_{idx:03d}.mp4")
                     vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},format=yuv420p"
-                    run_ffmpeg(["-loop","1","-i",img,"-i",a,"-vf",vf,"-t",str(max(2,dur)),"-r","25","-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p","-c:a","aac","-shortest",frame])
+                    run_ffmpeg(["-loop","1","-i",img,"-i",a,"-vf",vf,"-t",str(max(2,dur)),"-r",str(fps),"-c:v","libx264","-preset","medium","-b:v","8M","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-shortest",frame])
                 else:
                     # Subtitle-only: show each translated scene for a readable fixed duration.
                     dur=max(4,min(12,len(scene["text"])/18))
                     frame=str(assets/f"clip_{idx:03d}.mp4")
-                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps=25,format=yuv420p"
+                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},format=yuv420p"
                     run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r","25","-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
                 clips.append(frame)
 
