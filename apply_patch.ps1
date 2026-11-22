@@ -3,6 +3,8 @@ param(
   [Parameter(Mandatory=$true)][string]$Package
 )
 $ErrorActionPreference = 'Stop'
+$Target = ([string]$Target).Trim([char]34)
+$Package = ([string]$Package).Trim([char]34).TrimEnd([char]92)
 $targetDir = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Target))
 $logDir = Join-Path $env:LOCALAPPDATA 'VideoStudyosu'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -24,7 +26,7 @@ function Resolve-SafePath([string]$root, [string]$relative) {
 $backup = Join-Path $logDir ('UpdateBackups\' + (Get-Date -Format 'yyyyMMdd_HHmmss'))
 $changed = New-Object System.Collections.Generic.List[object]
 try {
-  Log "Patch start. Target=$Target Package=$Package"
+  Log "Patch start. Target=[$Target] Package=[$Package]"
   $manifest = Get-Content -LiteralPath (Join-Path $Package 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   if (-not $manifest.files -or $manifest.files.Count -lt 1) { throw 'Yama manifest dosyasi bos.' }
   $validated = New-Object System.Collections.Generic.List[object]
