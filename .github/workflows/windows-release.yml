@@ -27,7 +27,7 @@ jobs:
       - name: Package updater
         shell: pwsh
         run: |
-          Compress-Archive -Force -Path 'dist/Video Studyosu.exe','update_install.bat' -DestinationPath 'VideoStudyosu_Update.zip'
+          Compress-Archive -Force -Path 'dist/Video Studyosu.exe','update_install.bat','INSTALL.bat' -DestinationPath 'VideoStudyosu_Update.zip'
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
