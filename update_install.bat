@@ -21,8 +21,6 @@ set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
   echo   $dst = $env:UPDATE_TARGET
   echo   Write-Log "Updater started. Source=[$src] Target=[$dst]"
   echo   if ^(-not $src^) { throw 'Update EXE not found in extracted package.' }
-  echo   $src = ([string]$src).Trim([char]34)
-  echo   $dst = ([string]$dst).Trim([char]34)
   echo   if ^(-not ^(Test-Path -LiteralPath $src -PathType Leaf^)^) { throw "Update EXE not found: $src" }
   echo   $dstDir = Split-Path -Parent $dst
   echo   New-Item -ItemType Directory -Force -Path $dstDir ^| Out-Null
@@ -41,10 +39,11 @@ set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
   echo     } catch { Start-Sleep -Milliseconds 750 }
   echo   }
   echo   if ^(-not $unlocked^) { throw 'Old application is still running or the target file is locked.' }
-  echo   Copy-Item -Path (Join-Path $srcDir '*') -Destination $dstDir -Recurse -Force
+  echo   $srcContents = Join-Path $srcDir '*'
+  echo   Copy-Item -Path $srcContents -Destination $dstDir -Recurse -Force
   echo   if ^(-not ^(Test-Path -LiteralPath $dst -PathType Leaf^)^) { throw 'Updated application EXE was not copied.' }
   echo   if ^(-not ^(Test-Path -LiteralPath (Join-Path $dstDir '_internal') -PathType Container^)^) { throw 'Updated runtime folder was not copied.' }
-  echo   Write-Log "EXE replaced successfully. Bytes=$((Get-Item -LiteralPath $dst).Length)"
+  echo   Write-Log 'EXE replaced successfully.'
   echo   if ^($env:VIDEO_STUDYOSU_NO_LAUNCH -ne '1'^) { Start-Process -FilePath $dst }
   echo   Write-Log 'New application copied and verified.'
   echo } catch {
