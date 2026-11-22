@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.3.8 - Görsel Stüdyo"
-APP_VERSION = "5.3.8"
+APP_NAME = "Video Studyosu V5.3.9 - Görsel Stüdyo"
+APP_VERSION = "5.3.9"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -425,10 +425,10 @@ class VideoStudio:
         style.configure("TProgressbar",background="#eeeeee",troughcolor=panel,bordercolor=line)
         style.configure("TSeparator",background=line)
         top=ttk.Frame(self.root,padding=10); top.pack(fill="x")
-        ttk.Label(top,text="SEZGİN KARABUDAK",font=("Segoe UI",18,"bold")).pack(side="left")
-        ttk.Label(top,text="Sahneye özel görseller • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
         self.menu_button=ttk.Button(top,text="☰  MENÜ",command=self.toggle_menu)
         self.menu_button.pack(side="left", padx=(0,12))
+        ttk.Label(top,text="SEZGİN KARABUDAK",font=("Segoe UI",18,"bold")).pack(side="left")
+        ttk.Label(top,text="Sahneye özel görseller • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
         try: style.layout("Hidden.TNotebook.Tab", [])
         except Exception: pass
         style.configure("Hidden.TNotebook",background=bg,borderwidth=0)
