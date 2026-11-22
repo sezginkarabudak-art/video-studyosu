@@ -2145,13 +2145,14 @@ class VideoStudio:
         if i is None:
             messagebox.showinfo("Sahne seç","Önce görsel üretilecek sahneyi seç.")
             return
-        workflow=self.comfy_workflow_var.get().strip()
-        automatic_workflow=not workflow
-        base_url=self.comfy_url_var.get().strip()
+        workflow=""
+        automatic_workflow=True
+        base_url="http://127.0.0.1:8188"
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         if automatic_workflow:
             try:
-                ensure_comfyui_running(base_url)\n                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
+                ensure_comfyui_running(base_url)\n                ensure_comfyui_running(base_url)
+                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
                 self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
             except Exception as exc:
                 messagebox.showerror("Görsel motoru hazır değil",str(exc))
@@ -2195,12 +2196,12 @@ class VideoStudio:
 
     def generate_all_comfy_visuals(self):
         """Generate a real ComfyUI image for every scene, sequentially, without silent fallback."""
-        workflow=self.comfy_workflow_var.get().strip()
+        workflow=""
         if not self.project.get("scenes"):
             messagebox.showinfo("Sahne yok","Önce metni sahnelere ayır.")
             return
-        automatic_workflow=not workflow
-        base_url=self.comfy_url_var.get().strip()
+        automatic_workflow=True
+        base_url="http://127.0.0.1:8188"
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         if automatic_workflow:
             try:
@@ -2219,7 +2220,7 @@ class VideoStudio:
         self.apply_scene_text_if_needed()
         scenes=[dict(scene) for scene in self.project["scenes"]]
         characters=list(self.project.get("characters",[]))
-        base_url=self.comfy_url_var.get().strip()
+        base_url="http://127.0.0.1:8188"
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
         self.comfy_busy=True
         self.comfy_status.config(text=f"AI üretimi başladı: 0/{len(scenes)} sahne")
