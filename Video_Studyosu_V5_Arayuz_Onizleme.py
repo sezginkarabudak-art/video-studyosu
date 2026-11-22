@@ -2323,6 +2323,8 @@ class VideoStudio:
                     dur=max(4,min(12,len(scene["text"])/18))
                     frame=str(assets/f"clip_{idx:03d}.mp4")
                     vf=camera_motion_filter(scene.get("visual_request",""),size,fps)
+                    effect_filter=get_video_effect_filter(self.project.get("visual_effect","Sinematik"))
+                    if effect_filter: vf += "," + effect_filter
                     run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r",str(fps),"-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
                 clips.append(frame)
 
