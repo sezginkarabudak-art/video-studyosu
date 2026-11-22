@@ -353,7 +353,7 @@ def add_subtitle_to_image(image_path, subtitle, target_path):
         y += line_h
     Image.alpha_composite(im, overlay).convert("RGB").save(target_path, quality=95)
 
-def add_character_reference(image_path, character, output_path):
+def add_character_reference(image_path, character, output_path, slot=0, total=1):
     """Adds the same user-supplied reference portrait as a small on-screen visual cue.
     This is not AI character synthesis or scene-aware compositing.
     """
@@ -362,14 +362,15 @@ def add_character_reference(image_path, character, output_path):
     if not ref or not Path(ref).exists():
         im.convert("RGB").save(output_path,quality=94); return output_path
     w,h=im.size
-    box=max(110,int(min(w,h)*0.22))
+    total=max(1,int(total))
+    box=max(70,int(min(w,h)*0.22/(total**0.28)))
     portrait=Image.open(ref).convert("RGB")
     side=min(portrait.size)
     x=(portrait.width-side)//2; y=(portrait.height-side)//2
     portrait=portrait.crop((x,y,x+side,y+side)).resize((box,box),Image.Resampling.LANCZOS).convert("RGBA")
     mask=Image.new("L",(box,box),0); md=ImageDraw.Draw(mask); md.ellipse((2,2,box-2,box-2),fill=255)
     portrait.putalpha(mask)
-    pad=max(16,int(w*.025)); px=pad; py=h-box-pad
+    pad=max(12,int(w*.018)); px=pad+slot*(box+pad); py=h-box-pad
     overlay=Image.new("RGBA",im.size,(0,0,0,0)); od=ImageDraw.Draw(overlay)
     od.ellipse((px-5,py-5,px+box+5,py+box+5),fill=(0,0,0,180),outline=(245,240,225,220),width=4)
     overlay.alpha_composite(portrait,(px,py))
@@ -1448,7 +1449,7 @@ class VideoStudio:
                 valid_ids=[cid for cid in char_ids if isinstance(cid,int) and 0 <= cid < len(chars)]
                 for char_no,char_id in enumerate(valid_ids):
                     char_img=str(assets/f"karakter_{idx:03d}_{char_no:02d}.jpg")
-                    add_character_reference(img,chars[char_id],char_img)
+                    add_character_reference(img,chars[char_id],char_img,char_no,len(valid_ids))
                     img=char_img
 
                 # Translate the Turkish scene text for subtitle-only or bilingual output.
