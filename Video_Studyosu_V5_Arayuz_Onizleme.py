@@ -64,6 +64,76 @@ def remove_image_background(source_path, output_path):
         check.verify()
     return output_path
 
+def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200):
+    """Submit an exported ComfyUI API workflow, wait for its output and save the image locally."""
+    base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
+    with open(workflow_path,"r",encoding="utf-8") as handle:
+        workflow=json.load(handle)
+    if not isinstance(workflow,dict) or not workflow:
+        raise ValueError("ComfyUI API iş akışı boş veya geçersiz.")
+    # Update common built-in text, seed, and latent-size nodes without assuming fixed node IDs.
+    text_nodes=[]
+    for node_id,node in workflow.items():
+        if not isinstance(node,dict): continue
+        kind=node.get("class_type","")
+        inputs=node.get("inputs",{})
+        if kind in ("CLIPTextEncode","CLIPTextEncodeSDXL") and isinstance(inputs,dict):
+            text_value=inputs.get("text")
+            if isinstance(text_value,str):
+                text_nodes.append((node_id,inputs,text_value))
+        if kind=="KSampler" and isinstance(inputs,dict) and "seed" in inputs:
+            inputs["seed"]=random.randint(1,2**31-1)
+        if kind in ("EmptyLatentImage","EmptySD3LatentImage") and isinstance(inputs,dict):
+            if "width" in inputs: inputs["width"]=int(width)
+            if "height" in inputs: inputs["height"]=int(height)
+    if not text_nodes:
+        raise ValueError("İş akışında CLIPTextEncode metin düğümü bulunamadı. API formatında SD/SDXL iş akışı seç.")
+    # First text encoder is positive in the standard exported text-to-image graph.
+    text_nodes[0][1]["text"]=prompt_text
+    client_id="video-studyosu-"+str(random.randint(100000,999999999))
+    payload=json.dumps({"prompt":workflow,"client_id":client_id}).encode("utf-8")
+    request=urllib.request.Request(base_url+"/prompt",data=payload,headers={"Content-Type":"application/json"},method="POST")
+    with urllib.request.urlopen(request,timeout=30) as response:
+        submitted=json.loads(response.read().decode("utf-8"))
+    prompt_id=submitted.get("prompt_id")
+    if not prompt_id:
+        raise RuntimeError("ComfyUI işi kabul etmedi: "+json.dumps(submitted,ensure_ascii=False)[:1200])
+    deadline=time.time()+int(timeout)
+    history=None
+    while time.time()<deadline:
+        time.sleep(2)
+        try:
+            with urllib.request.urlopen(base_url+"/history/"+prompt_id,timeout=20) as response:
+                data=json.loads(response.read().decode("utf-8"))
+            history=data.get(prompt_id) or data
+            if history and history.get("outputs"):
+                break
+            if history and history.get("status",{}).get("status_str")=="error":
+                raise RuntimeError("ComfyUI görsel üretimi hata verdi: "+str(history["status"])[:1200])
+        except urllib.error.HTTPError:
+            continue
+    else:
+        raise TimeoutError("ComfyUI görsel üretimi zaman aşımına uğradı.")
+    outputs=history.get("outputs",{})
+    image_info=None
+    for node_output in outputs.values():
+        for image_item in node_output.get("images",[]):
+            if image_item.get("filename"):
+                image_info=image_item
+                break
+        if image_info: break
+    if not image_info:
+        raise RuntimeError("İş tamamlandı ancak SaveImage çıktısı bulunamadı. İş akışında SaveImage düğümü olmalı.")
+    query=urllib.parse.urlencode({"filename":image_info["filename"],"subfolder":image_info.get("subfolder",""),"type":image_info.get("type","output")})
+    with urllib.request.urlopen(base_url+"/view?"+query,timeout=60) as response:
+        image_bytes=response.read()
+    output_dir=Path(output_dir); output_dir.mkdir(parents=True,exist_ok=True)
+    target=output_dir/("comfy_"+prompt_id[:8]+".png")
+    target.write_bytes(image_bytes)
+    with Image.open(target) as verify:
+        verify.verify()
+    return str(target)
+
 def ffmpeg():
     return imageio_ffmpeg.get_ffmpeg_exe()
 
@@ -993,6 +1063,15 @@ class VideoStudio:
         preview_top=ttk.Frame(preview_box); preview_top.pack(fill="x")
         ttk.Button(preview_top,text="Tüm sahneleri ön izlemede hazırla",command=self.prepare_all_previews).pack(side="left")
         ttk.Button(preview_top,text="Bu sahneyi ön izle",command=self.generate_visual).pack(side="left",padx=5)
+        comfy_row=ttk.Frame(preview_box); comfy_row.pack(fill="x",pady=(6,2))
+        ttk.Label(comfy_row,text="ComfyUI adresi").pack(side="left")
+        self.comfy_url_var=tk.StringVar(value="http://127.0.0.1:8188")
+        ttk.Entry(comfy_row,textvariable=self.comfy_url_var,width=25).pack(side="left",padx=5)
+        ttk.Button(comfy_row,text="API iş akışı JSON seç",command=self.choose_comfy_workflow).pack(side="left",padx=4)
+        ttk.Button(comfy_row,text="ComfyUI ile AI görsel üret",command=self.generate_comfy_visual).pack(side="left",padx=4)
+        self.comfy_workflow_var=tk.StringVar(value="")
+        self.comfy_status=ttk.Label(preview_box,text="ComfyUI: Bağlantı için yerel ComfyUI ve API iş akışı gerekir.",foreground="#777")
+        self.comfy_status.pack(anchor="w")
         self.preview_label=ttk.Label(preview_box,text="Bir sahne seçip ön izleme oluştur.",anchor="center")
         self.preview_label.pack(fill="both",expand=True,pady=4)
         self.preview_photo=None
@@ -1523,6 +1602,57 @@ class VideoStudio:
         p=filedialog.askopenfilename(filetypes=[("Ses dosyası","*.wav *.mp3 *.m4a *.aac *.ogg")])
         if p:
             self.project["music"]=p; self.music_label.config(text=Path(p).name)
+
+    def choose_comfy_workflow(self):
+        path=filedialog.askopenfilename(title="ComfyUI API iş akışını seç",filetypes=[("JSON iş akışı","*.json")])
+        if path:
+            self.comfy_workflow_var.set(path)
+            self.comfy_status.config(text="API iş akışı: "+Path(path).name)
+            self.set_status("ComfyUI iş akışı seçildi.")
+
+    def generate_comfy_visual(self):
+        i=self.selected_index()
+        if i is None:
+            messagebox.showinfo("Sahne seç","Önce görsel üretilecek sahneyi seç.")
+            return
+        workflow=self.comfy_workflow_var.get().strip()
+        if not workflow or not Path(workflow).is_file():
+            messagebox.showinfo("İş akışı gerekli","ComfyUI arayüzünden File > Export Workflow (API) ile JSON dışa aktar ve burada seç.")
+            return
+        if getattr(self,"comfy_busy",False):
+            messagebox.showinfo("İşlem sürüyor","ComfyUI görsel üretimi zaten devam ediyor.")
+            return
+        self.apply_scene_text()
+        scene=self.project["scenes"][i]
+        request=scene.get("visual_request","")
+        prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+scene.get("text","")+" "+request).strip()
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
+        folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
+        self.comfy_busy=True
+        self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
+        self.set_status("Gerçek AI görseli ComfyUI ile üretiliyor...")
+        def worker():
+            try:
+                result=comfyui_generate_image(self.comfy_url_var.get(),workflow,prompt_text,folder,width,height)
+                self.root.after(0,lambda:self._comfy_visual_done(i,result,None))
+            except Exception as exc:
+                message=str(exc)
+                self.root.after(0,lambda:self._comfy_visual_done(i,None,message))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _comfy_visual_done(self,index,image_path,error):
+        self.comfy_busy=False
+        if error:
+            self.comfy_status.config(text="ComfyUI hatası: "+error[:220])
+            self.set_status("AI görsel üretimi tamamlanamadı.")
+            messagebox.showerror("ComfyUI görsel üretimi",error)
+            return
+        if index>=len(self.project.get("scenes",[])):
+            return
+        self.project["scenes"][index]["image"]=image_path
+        self.show_preview(index)
+        self.comfy_status.config(text="AI görseli hazır: "+Path(image_path).name)
+        self.set_status("ComfyUI gerçek AI görseli sahneye aktarıldı.")
 
     def generate_visual(self):
         i=self.selected_index()
