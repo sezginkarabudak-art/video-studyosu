@@ -48,6 +48,22 @@ except Exception:
     from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageTk
     import imageio_ffmpeg
 
+def remove_image_background(source_path, output_path):
+    """Optional local AI cutout using the open-source rembg package."""
+    try:
+        from rembg import remove
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "rembg[cpu]"])
+        from rembg import remove
+    with open(source_path, "rb") as src:
+        result = remove(src.read())
+    with open(output_path, "wb") as dst:
+        dst.write(result)
+    # Verify that the result really contains transparency before using it.
+    with Image.open(output_path) as check:
+        check.verify()
+    return output_path
+
 def ffmpeg():
     return imageio_ffmpeg.get_ffmpeg_exe()
 
@@ -1177,6 +1193,7 @@ class VideoStudio:
         ttk.Button(right,text="Ön izlemeyi yenile / yeniden oluştur",command=self.refresh_character_preview).pack(anchor="w",pady=4)
         row=ttk.Frame(right); row.pack(fill="x",pady=6)
         ttk.Button(row,text="Fotoğraf seç",command=self.choose_character_image).pack(side="left")
+        ttk.Button(row,text="Arka planı AI ile sil",command=self.remove_character_background).pack(side="left",padx=6)
         ttk.Button(row,text="Karakteri kaydet",command=self.save_character).pack(side="left",padx=6)
         ttk.Button(row,text="Karakteri sil",command=self.delete_character).pack(side="left")
         ttk.Separator(right).pack(fill="x",pady=14)
@@ -1210,6 +1227,24 @@ class VideoStudio:
         path=filedialog.askopenfilename(filetypes=[("Görsel","*.png *.jpg *.jpeg *.webp *.bmp")])
         if path:
             self.character_image=path; self.character_image_label.config(text=Path(path).name); self.refresh_character_preview()
+
+    def remove_character_background(self):
+        if not self.character_image or not Path(self.character_image).exists():
+            messagebox.showinfo("Fotoğraf gerekli","Önce karakter fotoğrafı seç.")
+            return
+        try:
+            source=Path(self.character_image)
+            target=source.with_name(source.stem+"_arkaplan_silindi.png")
+            self.set_status("Ücretsiz yerel AI arka plan silme hazırlanıyor...")
+            remove_image_background(str(source),str(target))
+            self.character_image=str(target)
+            self.character_image_label.config(text=target.name+" — şeffaf PNG")
+            self.refresh_character_preview()
+            self.set_status("Arka plan silindi. Şeffaf karakter görseli hazır.")
+            messagebox.showinfo("Tamamlandı","Arka plan kaldırıldı. Şeffaf PNG karakter görseli olarak seçildi.")
+        except Exception as exc:
+            messagebox.showerror("Arka plan silinemedi",str(exc))
+            self.set_status("AI arka plan silme başarısız oldu.")
 
     def refresh_character_preview(self):
         """Show chosen portrait or a local concept card; this is not AI image generation."""
