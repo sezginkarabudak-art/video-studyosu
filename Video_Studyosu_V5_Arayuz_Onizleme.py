@@ -1337,11 +1337,25 @@ class VideoStudio:
 
     def choose_image(self):
         i=self.selected_index()
-        if i is None:return
-        p=filedialog.askopenfilename(filetypes=[("Görsel","*.png *.jpg *.jpeg *.webp *.bmp")])
-        if p:
+        if i is None:
+            messagebox.showinfo("Sahne seç","Önce görsel eklemek istediğin sahneyi listeden seç.")
+            return
+        p=filedialog.askopenfilename(
+            title="Sahne için görsel seç",
+            filetypes=[("Desteklenen görseller","*.png *.jpg *.jpeg *.webp *.bmp"),("Tüm dosyalar","*.*")]
+        )
+        if not p:
+            return
+        try:
+            # Dosyanın gerçekten açılabilir bir görsel olduğunu doğrula;
+            # bozuk/yanlış dosya seçilirse mevcut sahne görselini koru.
+            with Image.open(p) as check:
+                check.verify()
             self.project["scenes"][i]["image"]=p
-            self.set_status("Sahne görseli eklendi.")
+            self.show_preview(i)
+            self.set_status(f"Sahne {i+1} görseli eklendi ve ön izleme yenilendi.")
+        except Exception as exc:
+            messagebox.showerror("Görsel açılamadı",f"Seçilen dosya geçerli bir görsel değil veya okunamıyor.\n\n{exc}")
 
     def choose_audio(self):
         i=self.selected_index()
