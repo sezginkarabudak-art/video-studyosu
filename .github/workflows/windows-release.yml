@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
 jobs:
   build-and-release:
     runs-on: windows-latest
@@ -30,19 +33,75 @@ jobs:
           pip install Pillow edge-tts imageio-ffmpeg deep-translator pyinstaller
       - name: Verify source
         run: |
-          if (!(Test-Path "Video_Studyosu_V5_Arayuz_Onizleme.py")) { throw "Ana program dosyasi depoda yok: Video_Studyosu_V5_Arayuz_Onizleme.py" }
+          if (!(Test-Path "Video_Studyosu_V5_Arayuz_Onizleme.py")) { throw "Ana program dosyasi depoda yok." }
+          if (!(Test-Path "apply_patch.ps1")) { throw "Yama uygulama dosyasi depoda yok." }
       - name: Build Windows app
         run: |
           pyinstaller --noconfirm --clean --onedir --windowed --name "Video Studyosu" --distpath dist --workpath build --specpath build --collect-all edge_tts --collect-all imageio_ffmpeg --hidden-import deep_translator --hidden-import PIL.ImageTk Video_Studyosu_V5_Arayuz_Onizleme.py
-      - name: Package updater
+      - name: Package full installer and delta patch
+        id: package
         shell: pwsh
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
         run: |
           Copy-Item 'dist/Video Studyosu/Video Studyosu.exe' 'dist/Video Studyosu.exe'
           Compress-Archive -Force -Path 'dist/Video Studyosu.exe','dist/Video Studyosu','update_install.bat','INSTALL.bat' -DestinationPath 'VideoStudyosu_Update.zip'
+          $patchCreated = $false
+          try {
+            $previousTag = gh release view --repo $env:GITHUB_REPOSITORY --json tagName --jq .tagName
+            if (!$previousTag) { throw "Önceki yayın etiketi bulunamadı." }
+            New-Item -ItemType Directory -Force -Path previous | Out-Null
+            gh release download $previousTag --repo $env:GITHUB_REPOSITORY --pattern VideoStudyosu_Update.zip --dir previous
+            $oldZip = Join-Path (Resolve-Path previous) 'VideoStudyosu_Update.zip'
+            if (!(Test-Path $oldZip)) { throw "Önceki tam paket bulunamadı." }
+            Expand-Archive -LiteralPath $oldZip -DestinationPath previous/unpacked -Force
+            $oldRoot = Join-Path (Resolve-Path previous/unpacked) 'Video Studyosu.exe'
+            $oldRuntime = Join-Path (Resolve-Path previous/unpacked) 'Video Studyosu/_internal'
+            if (!(Test-Path $oldRoot) -or !(Test-Path $oldRuntime)) { throw "Önceki paketin dosya yapısı yama üretimine uygun değil." }
+            $newStage = Join-Path (Get-Location) 'new_stage'
+            Copy-Item 'dist/Video Studyosu.exe' $newStage
+            Copy-Item 'dist/Video Studyosu/_internal' (Join-Path $newStage '_internal') -Recurse
+            $oldStage = Join-Path (Get-Location) 'old_stage'
+            New-Item -ItemType Directory -Force -Path $oldStage | Out-Null
+            Copy-Item $oldRoot (Join-Path $oldStage 'Video Studyosu.exe')
+            Copy-Item $oldRuntime (Join-Path $oldStage '_internal') -Recurse
+            $patchRoot = Join-Path (Get-Location) 'patch_package'
+            $payload = Join-Path $patchRoot 'payload'
+            New-Item -ItemType Directory -Force -Path $payload | Out-Null
+            $changed = @()
+            Get-ChildItem -LiteralPath $newStage -File -Recurse | ForEach-Object {
+              $rel = $_.FullName.Substring($newStage.Length).TrimStart('\','/')
+              $oldFile = Join-Path $oldStage $rel
+              $newHash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+              $oldHash = if (Test-Path -LiteralPath $oldFile) { (Get-FileHash -LiteralPath $oldFile -Algorithm SHA256).Hash } else { '' }
+              if ($newHash -ne $oldHash) {
+                $dest = Join-Path $payload $rel
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
+                Copy-Item -LiteralPath $_.FullName -Destination $dest
+                $changed += [pscustomobject]@{ path=$rel; sha256=$newHash.ToLowerInvariant() }
+              }
+            }
+            if ($changed.Count -eq 0) { throw "Değişen dosya bulunamadı; yama oluşturulmadı." }
+            $fromVersion = $previousTag.TrimStart('v')
+            $manifest = [pscustomobject]@{ from_version=$fromVersion; to_version='\${{ steps.version.outputs.version }}'; files=$changed }
+            $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $patchRoot 'manifest.json') -Encoding utf8
+            Copy-Item 'update_install.bat' $patchRoot
+            Copy-Item 'apply_patch.ps1' $patchRoot
+            $patchName = "VideoStudyosu_Patch_from_$fromVersion.zip"
+            Compress-Archive -Force -Path (Join-Path $patchRoot '*') -DestinationPath $patchName
+            "patch_name=$patchName" >> $env:GITHUB_OUTPUT
+            $patchCreated = $true
+            Write-Host "Delta patch created: $patchName; changed files: $($changed.Count)"
+          } catch {
+            Write-Warning "Delta patch was not created: $($_.Exception.Message)"
+          }
+          "patch_created=$patchCreated" >> $env:GITHUB_OUTPUT
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Video Studyosu v${{ steps.version.outputs.version }}
+          tag_name: v\${{ steps.version.outputs.version }}
+          name: Video Studyosu v\${{ steps.version.outputs.version }}
           generate_release_notes: true
-          files: VideoStudyosu_Update.zip
+          files: |
+            VideoStudyosu_Update.zip
+            \${{ steps.package.outputs.patch_name }}
