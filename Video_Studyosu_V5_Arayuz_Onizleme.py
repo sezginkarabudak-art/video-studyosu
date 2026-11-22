@@ -412,7 +412,7 @@ class VideoStudio:
         style.configure("TProgressbar",background="#eeeeee",troughcolor=panel,bordercolor=line)
         style.configure("TSeparator",background=line)
         top=ttk.Frame(self.root,padding=10); top.pack(fill="x")
-        ttk.Label(top,text="VIDEO STUDYOSU V5.3.3",font=("Segoe UI",18,"bold")).pack(side="left")
+        ttk.Label(top,text="SEZGİN KARABUDAK",font=("Segoe UI",18,"bold")).pack(side="left")
         ttk.Label(top,text="Sahneye özel görseller • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
         self.menu_button=ttk.Button(top,text="☰  MENÜ",command=self.toggle_menu)
         self.menu_button.pack(side="left", padx=(0,12))
