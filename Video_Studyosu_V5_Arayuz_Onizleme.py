@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.3.3 - Görsel Stüdyo"
-APP_VERSION = "5.3.3"
+APP_NAME = "Video Studyosu V5.3.4 - Görsel Stüdyo"
+APP_VERSION = "5.3.4"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -1473,11 +1473,32 @@ class VideoStudio:
         self.root.destroy()
 
 def main():
-    root=tk.Tk()
-    app=VideoStudio(root)
-    if getattr(sys, "frozen", False):
-        root.after(2500, lambda: threading.Thread(target=app._check_for_updates_worker, kwargs={"silent": True}, daemon=True).start())
-    root.mainloop()
+    log_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "VideoStudyosu"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "startup.log"
+    try:
+        with open(log_path, "a", encoding="utf-8") as log:
+            log.write(f"\\n--- START {time.strftime('%Y-%m-%d %H:%M:%S')} | version {APP_VERSION} ---\\n")
+        root = tk.Tk()
+        app = VideoStudio(root)
+        # Otomatik arka plan guncellemesi gecici olarak kapatildi.
+        # Guncelleme yalnizca kullanicinin MENÜ > Guncelleme secimiyle baslatilir.
+        root.mainloop()
+    except Exception:
+        import traceback
+        error = traceback.format_exc()
+        try:
+            with open(log_path, "a", encoding="utf-8") as log:
+                log.write(error + "\\n")
+        except Exception:
+            pass
+        try:
+            fallback = tk.Tk()
+            fallback.withdraw()
+            messagebox.showerror("Video Studyosu acilamadi", "Program acilirken hata olustu. Hata kaydi: " + str(log_path) + "\\n\\n" + error[-1800:])
+            fallback.destroy()
+        except Exception:
+            pass
 
 if __name__=="__main__":
     main()
