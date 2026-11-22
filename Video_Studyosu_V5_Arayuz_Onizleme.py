@@ -198,7 +198,7 @@ def interpret_scene_request(text, request=""):
     style = {"dark": 0, "fog": 0, "rain": 0, "warm": 0, "red": 0, "moon": 0,
              "silhouette": 0, "stars": 0, "bright": 0, "snow": 0,
              "lightning": 0, "fire": 0, "sunset": 0}
-    if any(k in combined for k in ["kar", "kar yağıyor", "tipi", "snow"]):
+    if any(k in combined for k in ["kar yağıyor", "kar yağışı", "karlı", "kar fırtınası", "tipi", "snow"]):
         style["snow"] = 1; notes.append("kar yağışı")
     if any(k in combined for k in ["şimşek", "yıldırım", "fırtına", "storm"]):
         style["lightning"] = 1; notes.append("şimşek efekti")
