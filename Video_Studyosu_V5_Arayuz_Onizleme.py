@@ -9,8 +9,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.5"
-APP_VERSION = "5.6.5"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.6"
+APP_VERSION = "5.6.6"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -197,6 +197,66 @@ def visual_generation_dimensions(width, height, is_sdxl=True):
     return 640, 640
 
 
+def find_comfyui_installation():
+    """Locate an existing local ComfyUI installation without asking the user for a path."""
+    candidates=[]
+    env_path=os.environ.get("VIDEO_STUDYOSU_COMFYUI")
+    if env_path: candidates.append(Path(env_path).expanduser())
+    candidates.extend([
+        HOME/"ComfyUI", HOME/"comfyui", HOME/"Desktop"/"ComfyUI",
+        HOME/"Documents"/"ComfyUI", HOME/"Videos"/"ComfyUI",
+        Path(sys.executable).resolve().parent/"ComfyUI"
+    ])
+    for root in candidates:
+        if (root/"main.py").is_file():
+            return root
+    return None
+
+
+def ensure_comfyui_running(base_url="http://127.0.0.1:8188", startup_timeout=90):
+    """Start an already-installed ComfyUI automatically and wait for its local API."""
+    base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
+    try:
+        with urllib.request.urlopen(base_url+"/system_stats",timeout=2):
+            return True
+    except Exception:
+        pass
+    install=find_comfyui_installation()
+    if install is None:
+        raise RuntimeError(
+            "Bu bilgisayarda ComfyUI kurulumu bulunamadı. Program artık ComfyUI'yi kendisi başlatmayı deniyor; "
+            "ancak ilk kurulum için uyumlu AI çalışma ortamı ve büyük görsel model dosyaları gerekiyor. "
+            "Bunlar henüz bu bilgisayarda yok. ComfyUI klasörü kurulduğunda otomatik algılanıp başlatılacak."
+        )
+    python_candidates=[
+        install/"python_embeded"/"python.exe",
+        install/"venv"/"Scripts"/"python.exe",
+        install/".venv"/"Scripts"/"python.exe"
+    ]
+    python_exe=next((p for p in python_candidates if p.is_file()),None)
+    if python_exe is None:
+        python_exe=Path(shutil.which("python") or shutil.which("python3") or "")
+    if not str(python_exe) or not python_exe.is_file():
+        raise RuntimeError("ComfyUI klasörü bulundu ancak çalıştırabileceği Python ortamı bulunamadı.")
+    creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0) if os.name=="nt" else 0
+    subprocess.Popen(
+        [str(python_exe),str(install/"main.py"),"--listen","127.0.0.1","--port","8188"],
+        cwd=str(install),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,creationflags=creationflags,
+        start_new_session=(os.name!="nt")
+    )
+    deadline=time.time()+int(startup_timeout)
+    last_error=None
+    while time.time()<deadline:
+        time.sleep(2)
+        try:
+            with urllib.request.urlopen(base_url+"/system_stats",timeout=3):
+                return True
+        except Exception as exc:
+            last_error=exc
+    raise RuntimeError("ComfyUI bulundu ancak otomatik başlatma zaman aşımına uğradı: "+str(last_error))
+
+
 def create_default_comfyui_workflow(base_url, width=1024, height=1024):
     """Build a quality-oriented workflow and enable IPAdapter when its nodes are installed."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
@@ -215,7 +275,7 @@ def create_default_comfyui_workflow(base_url, width=1024, height=1024):
     try:
         with urllib.request.urlopen(base_url+"/object_info/IPAdapterUnifiedLoader",timeout=8) as response:
             unified_info=json.loads(response.read().decode("utf-8"))
-        with urllib.request.urlopen(base_url+"/object_info/IPAdapterAdvanced",timeout=8) as response:
+        with urllib.request.urlopen(base_url+"/object_info/IPAdapter",timeout=8) as response:
             advanced_info=json.loads(response.read().decode("utf-8"))
         ipadapter_ready=bool(unified_info and advanced_info)
     except Exception:
@@ -1433,15 +1493,10 @@ class VideoStudio:
         ttk.Button(preview_top,text="Tüm sahneleri ön izlemede hazırla",command=self.prepare_all_previews).pack(side="left")
         ttk.Button(preview_top,text="Bu sahneyi ön izle",command=self.generate_visual).pack(side="left",padx=5)
         comfy_row=ttk.Frame(preview_box); comfy_row.pack(fill="x",pady=(6,2))
-        ttk.Label(comfy_row,text="ComfyUI adresi").pack(side="left")
-        ttk.Button(comfy_row,text="Bağlantıyı/modeli kontrol et",command=self.check_comfyui_connection).pack(side="left",padx=4)
+        ttk.Button(comfy_row,text="TÜM SAHNELERİ OTOMATİK OLUŞTUR",command=self.generate_all_comfy_visuals).pack(side="left",padx=4)
         self.comfy_url_var=tk.StringVar(value="http://127.0.0.1:8188")
-        ttk.Entry(comfy_row,textvariable=self.comfy_url_var,width=25).pack(side="left",padx=5)
-        ttk.Button(comfy_row,text="Gelişmiş: JSON iş akışı seç",command=self.choose_comfy_workflow).pack(side="left",padx=4)
-        ttk.Button(comfy_row,text="ComfyUI ile AI görsel üret",command=self.generate_comfy_visual).pack(side="left",padx=4)
-        ttk.Button(comfy_row,text="TÜM SAHNELERİ AI ÜRET",command=self.generate_all_comfy_visuals).pack(side="left",padx=4)
         self.comfy_workflow_var=tk.StringVar(value="")
-        self.comfy_status=ttk.Label(preview_box,text="Otomatik mod: ComfyUI çalışıyorsa kurulu modeli kendisi bulur; JSON seçmek zorunlu değildir.",foreground="#777")
+        self.comfy_status=ttk.Label(preview_box,text="Otomatik görsel motoru: Kurulu yerel motor aranır ve gerekirse kendisi başlatılır.",foreground="#777")
         self.comfy_status.pack(anchor="w")
         self.preview_label=ttk.Label(preview_box,text="Bir sahne seçip ön izleme oluştur.",anchor="center")
         self.preview_label.pack(fill="both",expand=True,pady=4)
@@ -2062,7 +2117,7 @@ class VideoStudio:
             self.project["music"]=p; self.music_label.config(text=Path(p).name)
 
     def check_comfyui_connection(self):
-        base_url=self.comfy_url_var.get().strip()
+        base_url="http://127.0.0.1:8188"
         self.comfy_status.config(text="ComfyUI bağlantısı ve model kontrol ediliyor...")
         def worker():
             try:
@@ -2096,7 +2151,7 @@ class VideoStudio:
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         if automatic_workflow:
             try:
-                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
+                ensure_comfyui_running(base_url)\n                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
                 self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
             except Exception as exc:
                 messagebox.showerror("Görsel motoru hazır değil",str(exc))
