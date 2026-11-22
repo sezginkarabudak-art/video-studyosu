@@ -1,8 +1,8 @@
 name: Video Studyosu Windows Release
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,6 +14,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Read app version
+        id: version
+        shell: pwsh
+        run: |
+          $source = Get-Content "Video_Studyosu_V5_Arayuz_Onizleme.py" -Raw
+          if ($source -match 'APP_VERSION\s*=\s*"([^"]+)"') {
+            "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
+          } else {
+            throw "APP_VERSION kaynak dosyada bulunamadi."
+          }
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -31,7 +41,7 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v5.2.0
-          name: Video Studyosu v5.2.0
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Video Studyosu v${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: VideoStudyosu_Update.zip
