@@ -1434,7 +1434,7 @@ class VideoStudio:
         scene["image"]=""
         try:
             p=self.preview_path(i)
-            make_original_visual(scene["text"],p,size=(960,540),seed=i,
+            make_original_visual(scene["text"],p,size=self.preview_canvas_size(),seed=i,
                                  request=scene.get("visual_request",""))
             scene["image"]=str(p)
             self.show_preview(i)
