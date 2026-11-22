@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Karabudak Film Stüdyoları V5.4.5"
-APP_VERSION = "5.4.5"
+APP_NAME = "Karabudak Film Stüdyoları V5.5.0"
+APP_VERSION = "5.5.0"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -755,10 +755,16 @@ class VideoStudio:
             if self._version_tuple(tag) <= self._version_tuple(APP_VERSION):
                 if not silent: self.root.after(0, lambda: messagebox.showinfo("Güncelleme", f"Program güncel.\nKurulu sürüm: {APP_VERSION}"))
                 return
-            asset = next((a for a in release.get("assets", []) if a.get("name") == UPDATE_ASSET), None)
+            patch_name = f"VideoStudyosu_Patch_from_{APP_VERSION}.zip"
+            asset = next((a for a in release.get("assets", []) if a.get("name") == patch_name), None)
+            if asset:
+                package_type = "yama"
+            else:
+                asset = next((a for a in release.get("assets", []) if a.get("name") == UPDATE_ASSET), None)
+                package_type = "tam"
             if not asset:
-                raise RuntimeError(f"Yeni sürüm bulundu ({tag}) ancak {UPDATE_ASSET} dosyası sürüme eklenmemiş.")
-            self.root.after(0, lambda v=tag: self.set_status(f"{v} güncellemesi indiriliyor..."))
+                raise RuntimeError("Yeni sürüm bulundu ancak uyumlu yama veya tam kurulum paketi yayımlanmamış.")
+            self.root.after(0, lambda v=tag, p=package_type: self.set_status(f"{v} {p} güncellemesi indiriliyor..."))
             threading.Thread(target=self._download_and_install_update, args=(tag, asset.get("browser_download_url", "")), daemon=True).start()
         except Exception as exc:
             if not silent: self.root.after(0, lambda e=str(exc): messagebox.showerror("Güncelleme kontrolü", "Güncelleme kontrol edilemedi.\n" + e))
@@ -779,7 +785,7 @@ class VideoStudio:
                 raise RuntimeError("İndirme bağlantısı bulunamadı.")
             self.root.after(0, lambda: self.set_status("Güncelleme indiriliyor..."))
             work = Path(tempfile.mkdtemp(prefix="KarabudakFilmStudyoUpdate_"))
-            archive = work / UPDATE_ASSET
+            archive = work / "update_package.zip"
             req = urllib.request.Request(download_url, headers={"User-Agent": "KarabudakFilmStudyo-Updater"})
             with urllib.request.urlopen(req, timeout=60) as response, open(archive, "wb") as out:
                 total = int(response.headers.get("Content-Length", 0) or 0)
@@ -796,8 +802,16 @@ class VideoStudio:
             self.root.after(0, lambda: self.set_status("Paket doğrulanıyor..."))
             with zipfile.ZipFile(archive, "r") as zf:
                 names = zf.namelist()
-                if "Video Studyosu.exe" not in names or "update_install.bat" not in names:
+                is_patch = "manifest.json" in names and "apply_patch.ps1" in names
+                is_full = "Video Studyosu.exe" in names and "update_install.bat" in names
+                if not (is_patch or is_full) or "update_install.bat" not in names:
                     raise RuntimeError("Güncelleme paketi eksik veya hatalı.")
+                if is_patch:
+                    manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+                    if str(manifest.get("from_version", "")) != APP_VERSION:
+                        raise RuntimeError("Bu yama kurulu sürümle uyumlu değil. Tam kurulum paketi gerekli.")
+                    if str(manifest.get("to_version", "")) != str(version):
+                        raise RuntimeError("Yama hedef sürüm bilgisi uyuşmuyor.")
                 zf.extractall(work)
             if not getattr(sys, "frozen", False):
                 raise RuntimeError("Otomatik EXE güncellemesi yalnızca kurulu masaüstü uygulamasında çalışır.")
