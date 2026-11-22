@@ -7,9 +7,10 @@ import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, 
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.0"
-APP_VERSION = "5.6.1"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.2"
+APP_VERSION = "5.6.2"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -1424,6 +1425,10 @@ class VideoStudio:
         ttk.Label(right,text="Müzik seviyesi").pack(anchor="w",pady=(8,2))
         self.music_vol=tk.IntVar(value=12)
         ttk.Scale(right,from_=0,to=40,variable=self.music_vol,orient="horizontal").pack(fill="x")
+        ttk.Label(right,text="Görsel efekt paketi").pack(anchor="w",pady=(9,2))
+        self.visual_effect=tk.StringVar(value="Sinematik")
+        ttk.Combobox(right,textvariable=self.visual_effect,values=list(VIDEO_EFFECT_PRESETS),state="readonly").pack(fill="x")
+        ttk.Label(right,text="Efektler FFmpeg ile yerel uygulanır; ek API veya abonelik gerekmez.",foreground="#777",wraplength=280).pack(anchor="w",pady=(3,2))
         ttk.Separator(right).pack(fill="x",pady=12)
         ttk.Button(right,text="VİDEOYU OLUŞTUR",command=self.create_video).pack(fill="x",ipady=10)
         self.progress=ttk.Progressbar(right,mode="indeterminate")
@@ -2134,6 +2139,7 @@ class VideoStudio:
         self.project["rate"]=int(self.rate.get())
         self.project["voice_volume"]=int(self.voice_vol.get())
         self.project["music_volume"]=int(self.music_vol.get())
+        self.project["visual_effect"]=self.visual_effect.get()
         p=filedialog.asksaveasfilename(initialdir=PROJECT_ROOT,initialfile=safe_name(self.project["name"])+".json",
             defaultextension=".json",filetypes=[("Video Studyosu projesi","*.json")])
         if not p:return
@@ -2169,6 +2175,7 @@ class VideoStudio:
             self.rate.set(self.project.get("rate",0))
             self.voice_vol.set(self.project.get("voice_volume",100))
             self.music_vol.set(self.project.get("music_volume",12))
+            self.visual_effect.set(self.project.get("visual_effect","Sinematik"))
             self.music_label.config(text=Path(self.project.get("music","")).name if self.project.get("music") else "Seçilmedi")
             self.refresh_scenes()
             self.refresh_characters()
@@ -2224,6 +2231,7 @@ class VideoStudio:
         self.project["rate"]=int(self.rate.get())
         self.project["voice_volume"]=int(self.voice_vol.get())
         self.project["music_volume"]=int(self.music_vol.get())
+        self.project["visual_effect"]=self.visual_effect.get()
         # Read Tk variables on the UI thread; the render worker uses plain values only.
         voice_rate,voice_pitch=self.effective_voice_controls()
         self.project["render_voice_rate"]=voice_rate
@@ -2307,6 +2315,8 @@ class VideoStudio:
                     dur=(int(m.group(1))*3600+int(m.group(2))*60+float(m.group(3))) if m else max(4,len(scene["text"])/13)
                     frame=str(assets/f"clip_{idx:03d}.mp4")
                     vf=camera_motion_filter(scene.get("visual_request",""),size,fps)
+                    effect_filter=get_video_effect_filter(self.project.get("visual_effect","Sinematik"))
+                    if effect_filter: vf += "," + effect_filter
                     run_ffmpeg(["-loop","1","-i",img,"-i",a,"-vf",vf,"-t",str(max(2,dur)),"-r",str(fps),"-c:v","libx264","-preset","medium","-b:v","8M","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-shortest",frame])
                 else:
                     # Subtitle-only: show each translated scene for a readable fixed duration.
