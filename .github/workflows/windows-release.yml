@@ -35,6 +35,7 @@ jobs:
         run: |
           if (!(Test-Path "Video_Studyosu_V5_Arayuz_Onizleme.py")) { throw "Ana program dosyasi depoda yok." }
           if (!(Test-Path "apply_patch.ps1")) { throw "Yama uygulama dosyasi depoda yok." }
+          if (!(Test-Path "update_full.ps1")) { throw "Tam guncelleme dosyasi depoda yok." }
       - name: Windows updater smoke tests
         shell: pwsh
         run: |
@@ -50,7 +51,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item 'dist/Video Studyosu/Video Studyosu.exe' 'dist/Video Studyosu.exe'
-          Compress-Archive -Force -Path 'dist/Video Studyosu.exe','dist/Video Studyosu','update_install.bat','INSTALL.bat' -DestinationPath 'VideoStudyosu_Update.zip'
+          Compress-Archive -Force -Path 'dist/Video Studyosu.exe','dist/Video Studyosu','update_install.bat','update_full.ps1','INSTALL.bat' -DestinationPath 'VideoStudyosu_Update.zip'
           $patchCreated = $false
           try {
             $releaseList = gh release list --repo $env:GITHUB_REPOSITORY --limit 20 --json tagName | ConvertFrom-Json

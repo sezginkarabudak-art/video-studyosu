@@ -86,6 +86,7 @@ try {
   $fullTargetDir = Join-Path $tempRoot 'Full Install Target With Spaces'
   New-Item -ItemType Directory -Force -Path $fullRuntime, $fullTargetDir | Out-Null
   Copy-Item -LiteralPath (Join-Path $repoRoot 'update_install.bat') -Destination $fullPackage
+  Copy-Item -LiteralPath (Join-Path $repoRoot 'update_full.ps1') -Destination $fullPackage
   Copy-Item -LiteralPath $whereExe -Destination (Join-Path $fullAppDir 'Video Studyosu.exe')
   Set-Content -LiteralPath (Join-Path $fullRuntime 'smoke-marker.txt') -Value 'full-update-ok' -Encoding UTF8
   $fullTarget = Join-Path $fullTargetDir 'Video Studyosu.exe'
