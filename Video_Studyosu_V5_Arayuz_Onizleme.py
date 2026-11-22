@@ -314,13 +314,27 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     im.save(path, quality=94)
 
 def fit_image(src, size):
+    """Fits an image without cutting off the subject; uses a soft blurred fill behind it."""
     w,h=size
     im=Image.open(src).convert("RGB")
-    scale=max(w/im.width,h/im.height)
-    nw,nh=int(im.width*scale),int(im.height*scale)
-    im=im.resize((nw,nh),Image.Resampling.LANCZOS)
-    x=(nw-w)//2; y=(nh-h)//2
-    return im.crop((x,y,x+w,y+h))
+    if im.size==(w,h):
+        return im
+    # Full-frame blurred background fills the target ratio.
+    cover=max(w/im.width,h/im.height)
+    bw,bh=max(w,int(im.width*cover)),max(h,int(im.height*cover))
+    bg=im.resize((bw,bh),Image.Resampling.LANCZOS)
+    bx=(bw-w)//2; by=(bh-h)//2
+    bg=bg.crop((bx,by,bx+w,by+h))
+    bg=bg.filter(ImageFilter.GaussianBlur(max(10,int(min(w,h)*0.025))))
+    shade=Image.new("RGB",(w,h),(0,0,0))
+    bg=Image.blend(bg,shade,0.28)
+    # Keep the entire original image visible in the foreground.
+    contain=min(w/im.width,h/im.height)
+    fw,fh=max(1,int(im.width*contain)),max(1,int(im.height*contain))
+    fg=im.resize((fw,fh),Image.Resampling.LANCZOS)
+    x=(w-fw)//2; y=(h-fh)//2
+    bg.paste(fg,(x,y))
+    return bg
 
 def make_motion_preview_frame(source, frame_no, frame_count=72):
     """Creates a lightweight animated cinematic preview from the scene still."""
