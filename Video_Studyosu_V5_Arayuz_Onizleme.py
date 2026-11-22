@@ -184,13 +184,19 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     if style["dark"]:
         c1=tuple(max(0,int(x*.55)) for x in c1)
         c2=tuple(max(0,int(x*.65)) for x in c2)
+    # Hizli dikey gradient: piksel-piksel Python dongusu yerine Pillow cizimi.
     im = Image.new("RGB", (w,h))
-    px = im.load()
+    d0 = ImageDraw.Draw(im)
     for y in range(h):
-        for x in range(w):
-            v = y / max(1,h-1)
-            glow = max(0, 1 - math.sqrt(((x-w*.55)/(w*.8))**2 + ((y-h*.42)/(h*.9))**2))
-            px[x,y] = tuple(max(0,min(255,int(c1[i]*(1-v)+c2[i]*v + glow*22))) for i in range(3))
+        v = y / max(1,h-1)
+        color = tuple(max(0,min(255,int(c1[i]*(1-v)+c2[i]*v))) for i in range(3))
+        d0.line((0,y,w,y), fill=color)
+    # Sinematik merkez isigi ve kenar karartmasi.
+    glow = Image.new("RGBA",(w,h),(0,0,0,0))
+    gd = ImageDraw.Draw(glow)
+    gd.ellipse((int(w*.18),int(h*.02),int(w*.90),int(h*.92)), fill=(235,220,190,28))
+    glow = glow.filter(ImageFilter.GaussianBlur(max(24,int(min(w,h)*.10))))
+    im = Image.alpha_composite(im.convert("RGBA"),glow).convert("RGB")
     d = ImageDraw.Draw(im, "RGBA")
     # Atmospheric particles / stars
     for _ in range(170):
@@ -253,7 +259,8 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     if style["red"]:
         od.rectangle((0,0,w,h),fill=(100,0,10,18))
     im=Image.alpha_composite(im.convert("RGBA"),overlay).convert("RGB")
-    # Her sahneye metin tabanlı ayrı ön plan kompozisyonu ekle.\n    draw_scene_subjects(ImageDraw.Draw(im, "RGBA"), text + " " + request, w, h, kind, seed)\n    # Optional original Turkish scene label; disabled during video rendering
+    # Her sahneye metin tabanli ayri on plan kompozisyonu ekle.
+    draw_scene_subjects(ImageDraw.Draw(im, "RGBA"), text + " " + request, w, h, kind, seed)\n    # Optional original Turkish scene label; disabled during video rendering
     # because the selected subtitle language is composited separately.
     if draw_text:
         d=ImageDraw.Draw(im,"RGBA")
