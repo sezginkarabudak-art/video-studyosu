@@ -57,7 +57,9 @@ try {
 } catch {
   $failure = $_.Exception.Message
   Log ("PATCH FAILED: " + $failure)
-  foreach ($rel in ($changed | Select-Object -Reverse)) {
+  $rollback = $changed.ToArray()
+  [array]::Reverse($rollback)
+  foreach ($rel in $rollback) {
     $dst = Join-Path $targetDir $rel
     $bak = Join-Path $backup $rel
     if (Test-Path -LiteralPath $bak -PathType Leaf) {
