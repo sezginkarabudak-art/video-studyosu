@@ -1362,6 +1362,7 @@ class VideoStudio:
         ttk.Entry(comfy_row,textvariable=self.comfy_url_var,width=25).pack(side="left",padx=5)
         ttk.Button(comfy_row,text="API iş akışı JSON seç",command=self.choose_comfy_workflow).pack(side="left",padx=4)
         ttk.Button(comfy_row,text="ComfyUI ile AI görsel üret",command=self.generate_comfy_visual).pack(side="left",padx=4)
+        ttk.Button(comfy_row,text="TÜM SAHNELERİ AI ÜRET",command=self.generate_all_comfy_visuals).pack(side="left",padx=4)
         self.comfy_workflow_var=tk.StringVar(value="")
         self.comfy_status=ttk.Label(preview_box,text="ComfyUI: Bağlantı için yerel ComfyUI ve API iş akışı gerekir.",foreground="#777")
         self.comfy_status.pack(anchor="w")
@@ -2029,6 +2030,67 @@ class VideoStudio:
                 message=str(exc)
                 self.root.after(0,lambda:self._comfy_visual_done(i,None,message))
         threading.Thread(target=worker,daemon=True).start()
+
+    def generate_all_comfy_visuals(self):
+        """Generate a real ComfyUI image for every scene, sequentially, without silent fallback."""
+        workflow=self.comfy_workflow_var.get().strip()
+        if not self.project.get("scenes"):
+            messagebox.showinfo("Sahne yok","Önce metni sahnelere ayır.")
+            return
+        if not workflow or not Path(workflow).is_file():
+            messagebox.showinfo("AI iş akışı gerekli","ComfyUI'de uyumlu bir görsel modeli ve API iş akışı hazırlayıp JSON dosyasını seç. AI üretimi için bu dosya zorunludur.")
+            return
+        if getattr(self,"comfy_busy",False):
+            messagebox.showinfo("İşlem sürüyor","ComfyUI üretimi zaten devam ediyor.")
+            return
+        self.apply_scene_text_if_needed()
+        scenes=[dict(scene) for scene in self.project["scenes"]]
+        characters=list(self.project.get("characters",[]))
+        base_url=self.comfy_url_var.get().strip()
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
+        folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
+        self.comfy_busy=True
+        self.comfy_status.config(text=f"AI üretimi başladı: 0/{len(scenes)} sahne")
+        self.set_status("Gerçek AI sahne görselleri sırayla üretiliyor; işlem sürebilir...")
+        def worker():
+            results=[]
+            try:
+                for index,scene in enumerate(scenes):
+                    request=scene.get("visual_request","")
+                    character_cues=build_character_consistency_prompt(scene,characters)
+                    continuity_cues=build_scene_continuity_prompt(scene,index,scenes)
+                    camera_cues=("Cinematic camera framing. "+request+" ") if request else "Cinematic eye-level camera framing. "
+                    prompt=("Create a single coherent photorealistic cinematic film still. "
+                            "Show the exact action, people, objects and location described in this scene. "
+                            "Do not use abstract shapes, text, captions, collages or graphic placeholders. "
+                            +camera_cues+scene.get("text","")+" "+character_cues+" "+continuity_cues).strip()
+                    seed=int(hashlib.sha256((str(index)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
+                    refs=collect_character_reference_images(scene,characters)
+                    self.root.after(0,lambda n=index+1,total=len(scenes:self.comfy_status.config(text=f"AI görseli üretiliyor: {n}/{total}"))
+                    result=comfyui_generate_image(base_url,workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
+                    results.append((index,result))
+                self.root.after(0,lambda r=results:self._comfy_all_done(r,None))
+            except Exception as exc:
+                message=str(exc)
+                self.root.after(0,lambda r=results,e=message:self._comfy_all_done(r,e))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _comfy_all_done(self,results,error):
+        for index,image_path in results:
+            if index<len(self.project.get("scenes",[])):
+                self.project["scenes"][index]["image"]=image_path
+        self.comfy_busy=False
+        if error:
+            self.comfy_status.config(text=f"{len(results)} sahne üretildi; işlem hata nedeniyle durdu.")
+            self.set_status("AI üretimi kısmen tamamlandı; üretilen görseller korundu.")
+            messagebox.showerror("AI sahne üretimi",f"{len(results)} sahne başarıyla üretildi. Sonraki sahnede hata oluştu:\n\n{error}")
+        else:
+            self.comfy_status.config(text=f"Tamamlandı: {len(results)} sahnenin AI görseli üretildi.")
+            self.set_status(f"{len(results)} sahne için gerçek AI görselleri hazır.")
+            messagebox.showinfo("AI sahneleri hazır",f"{len(results)} sahnenin görselleri üretildi ve projeye eklendi.")
+        if results:
+            self.refresh_scenes(results[-1][0])
+            self.show_preview(results[-1][0])
 
     def _comfy_visual_done(self,index,image_path,error):
         self.comfy_busy=False
