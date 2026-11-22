@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 APP_NAME = "Karabudak Film Stüdyoları V5.4.1"
-APP_VERSION = "5.4.1"
+APP_VERSION = "5.4.2"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -402,49 +402,51 @@ class VideoStudio:
         style=ttk.Style()
         try: style.theme_use("clam")
         except: pass
-        bg="#ffffff"; panel="#ffffff"; fg="#111111"; muted="#555555"; line="#c9c9c9"
+        bg="#101216"; panel="#191c21"; fg="#f4f1ee"; muted="#b9b7b5"; line="#34383e"
         self.root.configure(bg=bg)
-        style.configure(".",background=bg,foreground=fg,fieldbackground=panel,bordercolor=line,lightcolor=line,darkcolor=line,focuscolor=fg)
+        style.configure(".",background=bg,foreground=fg,fieldbackground=panel,bordercolor=line,lightcolor=line,darkcolor=line,focuscolor="#e52d22")
         style.configure("TFrame",background=bg)
         style.configure("TLabel",background=bg,foreground=fg)
-        style.configure("TLabelframe",background=bg,foreground=fg,bordercolor=line)
-        style.configure("TLabelframe.Label",background=bg,foreground=fg)
-        style.configure("TButton",background="#f0f0f0",foreground=fg,bordercolor="#bdbdbd",padding=(10,6),focuscolor=fg)
-        style.map("TButton",background=[("active","#e5e5e5"),("pressed","#d8d8d8"),("disabled","#f5f5f5")],foreground=[("disabled","#888888")])
-        style.configure("TEntry",fieldbackground=panel,foreground=fg,insertcolor=fg)
-        style.configure("TCombobox",fieldbackground=panel,background="#f0f0f0",foreground=fg,arrowcolor=fg)
-        style.map("TCombobox",fieldbackground=[("readonly",panel)],foreground=[("readonly",fg)],selectbackground=[("readonly","#444444")],selectforeground=[("readonly",fg)])
-        style.configure("TRadiobutton",background=bg,foreground=fg)
-        style.map("TRadiobutton",background=[("active",bg)],foreground=[("active",fg)])
-        style.configure("TCheckbutton",background=bg,foreground=fg)
-        style.map("TCheckbutton",background=[("active",bg)],foreground=[("active",fg)])
-        style.configure("TNotebook",background=bg,bordercolor=line,tabmargins=(2,4,2,0))
-        style.configure("TNotebook.Tab",background="#eeeeee",foreground=fg,padding=(12,7))
-        style.map("TNotebook.Tab",background=[("selected","#ffffff"),("active","#e5e5e5")],foreground=[("selected","#111111"),("active",fg)])
-        style.configure("Treeview",background=panel,fieldbackground=panel,foreground=fg)
-        style.map("Treeview",background=[("selected","#555555")],foreground=[("selected","#ffffff")])
-        style.configure("TProgressbar",background="#eeeeee",troughcolor=panel,bordercolor=line)
-        style.configure("TSeparator",background=line)
-        top=ttk.Frame(self.root,padding=10); top.pack(fill="x")
-        self.menu_button=ttk.Button(top,text="☰  MENÜ",command=self.toggle_menu)
-        self.menu_button.pack(side="left", padx=(0,12))
-        ttk.Label(top,text="KARABUDAK FİLM STÜDYOLARI",font=("Segoe UI",16,"bold"),foreground="#9b542d").pack(side="left")
-        ttk.Label(top,text="Film üretim merkezi  •  Senaryo  •  Karakter  •  Sahne",foreground=muted).pack(side="left",padx=18)
+        style.configure("TLabelframe",background=panel,foreground=fg,bordercolor=line)
+        style.configure("TLabelframe.Label",background=panel,foreground=fg)
+        style.configure("TButton",background="#292326",foreground=fg,bordercolor="#6b3732",padding=(10,7),focuscolor="#e52d22")
+        style.map("TButton",background=[("active","#5b1714"),("pressed","#8c201a")],foreground=[("disabled","#888888")])
+        style.configure("TEntry",fieldbackground="#17191d",foreground=fg,insertcolor=fg)
+        style.configure("TCombobox",fieldbackground="#17191d",background="#292326",foreground=fg,arrowcolor=fg)
+        style.map("TCombobox",fieldbackground=[("readonly","#17191d")],foreground=[("readonly",fg)])
+        style.configure("Treeview",background="#17191d",fieldbackground="#17191d",foreground=fg)
+        style.map("Treeview",background=[("selected","#6d201b")],foreground=[("selected","#ffffff")])
+        style.configure("TProgressbar",background="#e52d22",troughcolor="#292c31")
+        top=tk.Frame(self.root,bg="#171a1f",height=48,highlightthickness=1,highlightbackground="#34383e")
+        top.pack(fill="x"); top.pack_propagate(False)
+        tk.Label(top,text="🎬",font=("Segoe UI",19),bg="#171a1f",fg="#f1ddd0").pack(side="left",padx=(16,8))
+        tk.Label(top,text="Karabudak Film Stüdyoları",font=("Segoe UI",16,"bold"),bg="#171a1f",fg="#f7f3f0").pack(side="left")
+        tk.Label(top,text="v"+APP_VERSION,font=("Segoe UI",12),bg="#171a1f",fg="#c9c5c1").pack(side="left",padx=16)
+        shell=tk.Frame(self.root,bg=bg); shell.pack(fill="both",expand=True)
+        side=tk.Frame(shell,bg="#15181d",width=252,highlightthickness=1,highlightbackground="#30343a")
+        side.pack(side="left",fill="y"); side.pack_propagate(False)
+        tk.Label(side,text="☰",font=("Segoe UI",22),bg="#15181d",fg="#eeeeee").pack(anchor="w",padx=24,pady=(10,16))
         try: style.layout("Hidden.TNotebook.Tab", [])
         except Exception: pass
         style.configure("Hidden.TNotebook",background=bg,borderwidth=0)
-        nb=ttk.Notebook(self.root,style="Hidden.TNotebook"); nb.pack(fill="both",expand=True,padx=10,pady=(0,10))
+        nb=ttk.Notebook(shell,style="Hidden.TNotebook"); nb.pack(side="left",fill="both",expand=True)
         self.menu_popup=None
         self.editor=ttk.Frame(nb,padding=10); nb.add(self.editor,text="Video düzenleme / sahneler")
         self.library=ttk.Frame(nb,padding=10); nb.add(self.library,text="Video kütüphanem")
         self.characters_tab=ttk.Frame(nb,padding=10); nb.add(self.characters_tab,text="Karakter stüdyosu")
         self.writer_tab=ttk.Frame(nb,padding=10); nb.add(self.writer_tab,text="Senarist")
         self.update_tab=ttk.Frame(nb,padding=24); nb.add(self.update_tab,text="Güncelleme")
-        self.home_tab=ttk.Frame(nb,padding=22); nb.insert(0,self.home_tab,text="Başlangıç")
+        self.home_tab=tk.Frame(nb,bg="#101216"); nb.insert(0,self.home_tab,text="Ana Sayfa")
         self.old_edit_tab=ttk.Frame(nb,padding=18); nb.add(self.old_edit_tab,text="Eski Videoyu Düzenle")
+        nav=[("⌂","Ana Sayfa",0),("🎬","Video Oluştur",1),("♟","Karakter Stüdyosu",3),("▤","Senaryo Yazarı",4),("▣","Sahne Düzenleyici",1),("▱","Proje Yönetimi",2),("▶","Video Arşivi",2),("▣","Araçlar",6),("⚙","Ayarlar",5),("⟳","Güncelleme",5),("ⓘ","Hakkında",5)]
+        self.nav_buttons=[]
+        for icon,label,index in nav:
+            b=tk.Button(side,text=f"  {icon}    {label}",anchor="w",font=("Segoe UI",12),bg="#15181d",fg="#f2f0ee",activebackground="#6e1714",activeforeground="white",relief="flat",bd=0,padx=10,pady=11,command=lambda i=index:self._select_tab(i))
+            b.pack(fill="x",padx=10,pady=1); self.nav_buttons.append(b)
         self.build_home_tab(); self.build_editor(); self.build_library(); self.build_characters(); self.build_writer(); self.build_update_tab(); self.build_old_edit_tab()
         self._apply_dark_widgets(self.root)
         nb.select(self.home_tab)
+        self.main_notebook=nb
 
     def _apply_dark_widgets(self, parent):
         for child in parent.winfo_children():
@@ -461,44 +463,62 @@ class VideoStudio:
             self._apply_dark_widgets(child)
 
     def build_home_tab(self):
-        # Karabudak Film Stüdyoları için özel sinematik ana ekran görseli
-        hero=tk.Canvas(self.home_tab,height=230,bg="#10131a",highlightthickness=0)
-        hero.pack(fill="x",pady=(4,18))
-        hero.create_rectangle(0,0,1800,230,fill="#10131a",outline="")
-        for y in (10,202):
-            hero.create_rectangle(0,y,1800,y+18,fill="#252a32",outline="")
-            for x in range(12,1800,34):
-                hero.create_rectangle(x,y+4,x+18,y+14,fill="#b88a55",outline="")
-        hero.create_oval(760,42,900,182,fill="#252a32",outline="#c99a62",width=4)
-        hero.create_oval(792,74,868,150,fill="#10131a",outline="#c99a62",width=4)
-        hero.create_oval(812,94,848,130,fill="#b88a55",outline="#e7c99c",width=2)
-        hero.create_oval(900,30,1010,140,fill="#252a32",outline="#c99a62",width=4)
-        hero.create_oval(926,56,984,114,fill="#10131a",outline="#c99a62",width=3)
-        hero.create_rectangle(860,100,1100,174,fill="#252a32",outline="#c99a62",width=3)
-        hero.create_polygon(1080,110,1195,80,1195,194,1080,164,fill="#252a32",outline="#c99a62",width=3)
-        hero.create_line(950,174,920,205,fill="#c99a62",width=6)
-        hero.create_line(1030,174,1060,205,fill="#c99a62",width=6)
-        hero.create_rectangle(1170,130,1330,190,fill="#1c2028",outline="#c99a62",width=3)
-        for x in range(1180,1325,38):
-            hero.create_polygon(x,132,x+20,132,x+36,150,x+16,150,fill="#c99a62",outline="")
-        hero.create_text(1250,168,text="KARABUDAK",fill="#f1dfc5",font=("Segoe UI",11,"bold"))
-        hero.create_text(34,72,anchor="w",text="KARABUDAK",fill="#f3dfc1",font=("Segoe UI",31,"bold"))
-        hero.create_text(36,116,anchor="w",text="FİLM STÜDYOLARI",fill="#d28b53",font=("Segoe UI",20,"bold"))
-        hero.create_line(36,137,600,137,fill="#a8322d",width=4)
-        hero.create_text(38,166,anchor="w",text="Fikrinden sahneye, sahneden filme.",fill="#d6d8dc",font=("Segoe UI",13))
-        hero.create_text(38,188,anchor="w",text="Kendi hikâyeni burada üret.",fill="#9da5b0",font=("Segoe UI",10))
-        ttk.Label(self.home_tab,text="Karabudak Film Stüdyoları",font=("Segoe UI",22,"bold")).pack(anchor="w",pady=(0,4))
-        ttk.Label(self.home_tab,text="Fikrinden videoya — profesyonel film üretim alanı",font=("Segoe UI",12),foreground="#555").pack(anchor="w",pady=(0,14))
-        start=ttk.LabelFrame(self.home_tab,text="Yeni bir film projesi başlat",padding=24)
-        start.pack(fill="x",pady=8)
-        ttk.Label(start,text="Platformu seç; karakterlerini, sesini ve senaryonu belirle. Ardından sahneleri tek tek düzenleyip videonu oluştur.",wraplength=850,font=("Segoe UI",11)).pack(anchor="w",pady=(0,16))
-        ttk.Button(start,text="▶  YENİ VİDEO OLUŞTUR",command=self.start_wizard).pack(anchor="w",ipadx=28,ipady=14)
-        tiles=ttk.Frame(self.home_tab); tiles.pack(fill="x",pady=18)
-        for title,desc,tab in [("Senaryo Yazarı","Fikirden senaryo taslağına",4),("Karakter Stüdyosu","Karakterlerini kaydet ve tekrar kullan",3),("Sahne Düzenleyici","Sahneleri ayrı ayrı düzenle",1)]:
-            card=ttk.LabelFrame(tiles,text=title,padding=14); card.pack(side="left",fill="both",expand=True,padx=5)
-            ttk.Label(card,text=desc,wraplength=220).pack(anchor="w",pady=(0,10))
-            ttk.Button(card,text="Bölümü aç",command=lambda i=tab:self._select_tab(i)).pack(anchor="w")
-        ttk.Label(self.home_tab,text="Projelerin ve videoların bilgisayarında saklanır.  •  Karabudak Film Stüdyoları",foreground="#666").pack(anchor="w",pady=8)
+        self.home_tab.configure(bg="#101216")
+        hero=tk.Canvas(self.home_tab,bg="#090d12",height=560,highlightthickness=0)
+        hero.pack(fill="both",expand=True)
+        def paint(event=None):
+            hero.delete("all")
+            w=max(hero.winfo_width(),900); h=max(hero.winfo_height(),560)
+            hero.create_rectangle(0,0,w,h,fill="#090d12",outline="")
+            # cinematic dusk skyline and studio lighting
+            hero.create_rectangle(0,int(h*.56),w,int(h*.88),fill="#34221e",outline="")
+            for x in range(0,w,8):
+                y=int(h*.56 + 35*__import__("math").sin(x/95) + 15*__import__("math").sin(x/31))
+                hero.create_line(x,y,x,int(h*.88),fill="#3b2824",width=2)
+            for x,y,r in [(int(w*.13),int(h*.59),55),(int(w*.22),int(h*.64),34),(int(w*.43),int(h*.67),90)]:
+                hero.create_oval(x-r,y-r,x+r,y+r,outline="#b77b4f",width=7,fill="#111318")
+                hero.create_oval(x-r*.68,y-r*.68,x+r*.68,y+r*.68,outline="#70452f",width=4)
+                hero.create_oval(x-r*.25,y-r*.25,x+r*.25,y+r*.25,outline="#b77b4f",width=3)
+            # camera body and tripod
+            cx=int(w*.62); cy=int(h*.31)
+            hero.create_oval(cx-75,cy-90,cx+65,cy+50,fill="#111820",outline="#b77b4f",width=5)
+            hero.create_oval(cx-48,cy-63,cx+38,cy+23,fill="#05080c",outline="#d5a16d",width=4)
+            hero.create_rectangle(cx-90,cy-20,cx+135,cy+95,fill="#11161d",outline="#a97952",width=4)
+            hero.create_polygon(cx+130,cy-5,cx+220,cy-40,cx+220,cy+115,cx+130,cy+80,fill="#151b22",outline="#a97952",width=4)
+            hero.create_line(cx-20,cy+95,cx-100,h*.88,fill="#9c704c",width=9)
+            hero.create_line(cx+45,cy+95,cx+110,h*.88,fill="#9c704c",width=9)
+            hero.create_line(cx+10,cy+95,cx+5,h*.88,fill="#9c704c",width=9)
+            # warm spotlight and Turkish flag
+            hero.create_rectangle(w*.79,0,w*.99,h*.57,fill="#4b0e0d",outline="")
+            hero.create_oval(w*.82,h*.08,w*.98,h*.48,fill="#7c1815",outline="")
+            hero.create_oval(w*.855,h*.16,w*.93,h*.42,outline="#e8d8c8",width=7)
+            hero.create_oval(w*.88,h*.16,w*.955,h*.42,fill="#7c1815",outline="")
+            hero.create_text(w*.915,h*.33,text="★",font=("Segoe UI",38,"bold"),fill="#f2e6db")
+            hero.create_text(36, h*.22,anchor="w",text="KARABUDAK",font=("Georgia",42,"bold"),fill="#ead7c4")
+            hero.create_text(40,h*.30,anchor="w",text="FİLM STÜDYOLARI",font=("Georgia",25,"bold"),fill="#e5b99a")
+            hero.create_line(40,h*.34,w*.47,h*.34,fill="#d32a20",width=4)
+            hero.create_text(40,h*.39,anchor="w",text="Fikrinden filme, kendi hikâyeni üret.",font=("Segoe UI",14),fill="#e0d8d2")
+            # director chair
+            x=w*.77; y=h*.58
+            hero.create_rectangle(x,y,x+w*.13,y+12,fill="#9b633f",outline="#d19a70",width=3)
+            hero.create_line(x+8,y+10,x-10,h*.91,fill="#a97852",width=9)
+            hero.create_line(x+w*.12,y+10,x+w*.15,h*.91,fill="#a97852",width=9)
+            hero.create_rectangle(x+8,y-75,x+w*.12,y-10,fill="#17171a",outline="#b77b4f",width=4)
+            hero.create_text(x+w*.065,y-44,text="KARABUDAK",font=("Segoe UI",12,"bold"),fill="#f0d6c5")
+            # shortcut cards
+            labels=[("🎬","Yeni Video","Oluştur",1),("♟","Karakter","Yarat / Seç",3),("▤","Senaryo","Oluştur",4),("▣","Sahne","Düzenle",1),("📁","Projelerim","",2)]
+            gap=16; left=24; cardw=(w-left*2-gap*4)/5; top=h-148
+            for i,(ico,a,b,idx) in enumerate(labels):
+                x=left+i*(cardw+gap); active=i==0
+                hero.create_rectangle(x,top,x+cardw,top+126,fill="#351817" if active else "#211b1b",outline="#e33a2c" if active else "#70433a",width=2)
+                hero.create_text(x+cardw/2,top+38,text=ico,font=("Segoe UI Symbol",34),fill="#f0d8ca")
+                hero.create_text(x+cardw/2,top+78,text=a,font=("Segoe UI",15,"bold"),fill="white")
+                if b: hero.create_text(x+cardw/2,top+101,text=b,font=("Segoe UI",14,"bold"),fill="white")
+                hero.tag_bind(hero.create_rectangle(x,top,x+cardw,top+126,outline="",fill=""),"<Button-1>",lambda e,j=idx:self._select_tab(j))
+            hero.create_rectangle(0,h-26,w,h,fill="#171a1f",outline="#34383e")
+            hero.create_text(24,h-13,anchor="w",text="●  Hazır     |     Karabudak Film Stüdyoları  v"+APP_VERSION,font=("Segoe UI",10),fill="#e6e4e1")
+        hero.bind("<Configure>",paint)
+        self.home_hero=hero
 
     def toggle_menu(self):
         if self.menu_popup is not None and self.menu_popup.winfo_exists():
