@@ -9,8 +9,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.3"
-APP_VERSION = "5.6.3"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.4"
+APP_VERSION = "5.6.4"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -170,6 +170,32 @@ def comfyui_upload_reference_image(base_url, image_path):
     if not name:
         raise RuntimeError("ComfyUI referans görselini yükledi ancak dosya adı dönmedi.")
     return name
+
+
+def create_default_comfyui_workflow(base_url, width=1024, height=1024):
+    """Create a standard API workflow automatically using an installed ComfyUI checkpoint."""
+    base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
+    request=urllib.request.Request(base_url+"/models/checkpoints",headers={"User-Agent":"VideoStudyosu"})
+    try:
+        with urllib.request.urlopen(request,timeout=10) as response:
+            checkpoints=json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError("ComfyUI'ye ulaşılamadı. Önce yerel ComfyUI'yi başlat. Ayrıntı: "+str(exc))
+    if not isinstance(checkpoints,list) or not checkpoints:
+        raise RuntimeError("ComfyUI bağlı ancak yüklü checkpoint modeli bulunamadı. Bir SD 1.5 veya SDXL checkpoint modelini ComfyUI/models/checkpoints klasörüne kur.")
+    checkpoint=checkpoints[0]
+    workflow={
+        "1":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":checkpoint}},
+        "2":{"class_type":"CLIPTextEncode","inputs":{"text":"cinematic photorealistic film still, detailed environment, natural lighting","clip":["1",1]}},
+        "3":{"class_type":"CLIPTextEncode","inputs":{"text":"blurry, low quality, bad anatomy, extra fingers, duplicate people, text, watermark, collage","clip":["1",1]}},
+        "4":{"class_type":"EmptyLatentImage","inputs":{"width":int(width),"height":int(height),"batch_size":1}},
+        "5":{"class_type":"KSampler","inputs":{"seed":int(time.time())%(2**32),"steps":25,"cfg":7.0,"sampler_name":"dpmpp_2m","scheduler":"karras","denoise":1.0,"model":["1",0],"positive":["2",0],"negative":["3",0],"latent_image":["4",0]}},
+        "6":{"class_type":"VAEDecode","inputs":{"samples":["5",0],"vae":["1",2]}},
+        "7":{"class_type":"SaveImage","inputs":{"filename_prefix":"VideoStudyosu/Scene","images":["6",0]}}
+    }
+    target=Path(tempfile.gettempdir())/"video_studyosu_auto_workflow.json"
+    target.write_text(json.dumps(workflow,ensure_ascii=False,indent=2),encoding="utf-8")
+    return str(target),checkpoint
 
 
 def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200, reference_images=None, seed=0):
@@ -1358,13 +1384,14 @@ class VideoStudio:
         ttk.Button(preview_top,text="Bu sahneyi ön izle",command=self.generate_visual).pack(side="left",padx=5)
         comfy_row=ttk.Frame(preview_box); comfy_row.pack(fill="x",pady=(6,2))
         ttk.Label(comfy_row,text="ComfyUI adresi").pack(side="left")
+        ttk.Button(comfy_row,text="Bağlantıyı/modeli kontrol et",command=self.check_comfyui_connection).pack(side="left",padx=4)
         self.comfy_url_var=tk.StringVar(value="http://127.0.0.1:8188")
         ttk.Entry(comfy_row,textvariable=self.comfy_url_var,width=25).pack(side="left",padx=5)
-        ttk.Button(comfy_row,text="API iş akışı JSON seç",command=self.choose_comfy_workflow).pack(side="left",padx=4)
+        ttk.Button(comfy_row,text="Gelişmiş: JSON iş akışı seç",command=self.choose_comfy_workflow).pack(side="left",padx=4)
         ttk.Button(comfy_row,text="ComfyUI ile AI görsel üret",command=self.generate_comfy_visual).pack(side="left",padx=4)
         ttk.Button(comfy_row,text="TÜM SAHNELERİ AI ÜRET",command=self.generate_all_comfy_visuals).pack(side="left",padx=4)
         self.comfy_workflow_var=tk.StringVar(value="")
-        self.comfy_status=ttk.Label(preview_box,text="ComfyUI: Bağlantı için yerel ComfyUI ve API iş akışı gerekir.",foreground="#777")
+        self.comfy_status=ttk.Label(preview_box,text="Otomatik mod: ComfyUI çalışıyorsa kurulu modeli kendisi bulur; JSON seçmek zorunlu değildir.",foreground="#777")
         self.comfy_status.pack(anchor="w")
         self.preview_label=ttk.Label(preview_box,text="Bir sahne seçip ön izleme oluştur.",anchor="center")
         self.preview_label.pack(fill="both",expand=True,pady=4)
@@ -1984,6 +2011,23 @@ class VideoStudio:
         if p:
             self.project["music"]=p; self.music_label.config(text=Path(p).name)
 
+    def check_comfyui_connection(self):
+        base_url=self.comfy_url_var.get().strip()
+        self.comfy_status.config(text="ComfyUI bağlantısı ve model kontrol ediliyor...")
+        def worker():
+            try:
+                request=urllib.request.Request(base_url.rstrip("/")+"/models/checkpoints",headers={"User-Agent":"VideoStudyosu"})
+                with urllib.request.urlopen(request,timeout=10) as response:
+                    models=json.loads(response.read().decode("utf-8"))
+                if not models:
+                    raise RuntimeError("ComfyUI açık ancak checkpoint modeli bulunamadı.")
+                message=f"Bağlantı başarılı. {len(models)} model bulundu. İlk model: {models[0]}"
+                self.root.after(0,lambda:self.comfy_status.config(text=message))
+            except Exception as exc:
+                message=str(exc)
+                self.root.after(0,lambda:self.comfy_status.config(text="Görsel motoru hazır değil: "+message))
+        threading.Thread(target=worker,daemon=True).start()
+
     def choose_comfy_workflow(self):
         path=filedialog.askopenfilename(title="ComfyUI API iş akışını seç",filetypes=[("JSON iş akışı","*.json")])
         if path:
@@ -1997,8 +2041,19 @@ class VideoStudio:
             messagebox.showinfo("Sahne seç","Önce görsel üretilecek sahneyi seç.")
             return
         workflow=self.comfy_workflow_var.get().strip()
-        if not workflow or not Path(workflow).is_file():
-            messagebox.showinfo("İş akışı gerekli","ComfyUI arayüzünden File > Export Workflow (API) ile JSON dışa aktar ve burada seç.")
+        automatic_workflow=not workflow
+        base_url=self.comfy_url_var.get().strip()
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
+        if automatic_workflow:
+            try:
+                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
+                self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
+            except Exception as exc:
+                messagebox.showerror("Görsel motoru hazır değil",str(exc))
+                self.comfy_status.config(text="Görsel motoru hazır değil: "+str(exc))
+                return
+        elif not Path(workflow).is_file():
+            messagebox.showerror("İş akışı bulunamadı","Seçilen JSON dosyası artık bulunamıyor. Otomatik mod için dosya seçimini temizle.")
             return
         if getattr(self,"comfy_busy",False):
             messagebox.showinfo("İşlem sürüyor","ComfyUI görsel üretimi zaten devam ediyor.")
@@ -2017,14 +2072,16 @@ class VideoStudio:
         prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
-        character_images=collect_character_reference_images(scene,self.project.get("characters",[]))
+        character_images=[] if automatic_workflow else collect_character_reference_images(scene,self.project.get("characters",[]))
+        if automatic_workflow and collect_character_reference_images(scene,self.project.get("characters",[])):
+            self.comfy_status.config(text="Otomatik üretim: karakter metin tanımı kullanılıyor; fotoğrafla yüz sabitleme için IPAdapter iş akışı gerekir.")
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
         self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
         self.set_status("Gerçek AI görseli ComfyUI ile üretiliyor...")
         def worker():
             try:
-                result=comfyui_generate_image(self.comfy_url_var.get(),workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
+                result=comfyui_generate_image(base_url,workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
                 self.root.after(0,lambda:self._comfy_visual_done(i,result,None))
             except Exception as exc:
                 message=str(exc)
@@ -2037,8 +2094,19 @@ class VideoStudio:
         if not self.project.get("scenes"):
             messagebox.showinfo("Sahne yok","Önce metni sahnelere ayır.")
             return
-        if not workflow or not Path(workflow).is_file():
-            messagebox.showinfo("AI iş akışı gerekli","ComfyUI'de uyumlu bir görsel modeli ve API iş akışı hazırlayıp JSON dosyasını seç. AI üretimi için bu dosya zorunludur.")
+        automatic_workflow=not workflow
+        base_url=self.comfy_url_var.get().strip()
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
+        if automatic_workflow:
+            try:
+                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
+                self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
+            except Exception as exc:
+                messagebox.showerror("Görsel motoru hazır değil",str(exc))
+                self.comfy_status.config(text="Görsel motoru hazır değil: "+str(exc))
+                return
+        elif not Path(workflow).is_file():
+            messagebox.showerror("İş akışı bulunamadı","Seçilen JSON dosyası bulunamadı. Otomatik mod için dosya seçimini temizle.")
             return
         if getattr(self,"comfy_busy",False):
             messagebox.showinfo("İşlem sürüyor","ComfyUI üretimi zaten devam ediyor.")
@@ -2047,7 +2115,6 @@ class VideoStudio:
         scenes=[dict(scene) for scene in self.project["scenes"]]
         characters=list(self.project.get("characters",[]))
         base_url=self.comfy_url_var.get().strip()
-        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
         self.comfy_busy=True
         self.comfy_status.config(text=f"AI üretimi başladı: 0/{len(scenes)} sahne")
@@ -2065,7 +2132,7 @@ class VideoStudio:
                             "Do not use abstract shapes, text, captions, collages or graphic placeholders. "
                             +camera_cues+scene.get("text","")+" "+character_cues+" "+continuity_cues).strip()
                     seed=int(hashlib.sha256((str(index)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
-                    refs=collect_character_reference_images(scene,characters)
+                    refs=[] if automatic_workflow else collect_character_reference_images(scene,characters)
                     self.root.after(0,lambda n=index+1,total=len(scenes):self.comfy_status.config(text=f"AI görseli üretiliyor: {n}/{total}"))
                     result=comfyui_generate_image(base_url,workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
                     results.append((index,result))
