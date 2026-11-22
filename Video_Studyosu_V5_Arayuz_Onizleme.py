@@ -64,6 +64,26 @@ def remove_image_background(source_path, output_path):
         check.verify()
     return output_path
 
+
+def build_character_consistency_prompt(scene, characters):
+    """Build stable visual identity cues from the project's saved character bible."""
+    ids=scene.get("character_ids")
+    if not isinstance(ids,list):
+        old=scene.get("character_id")
+        ids=[old] if isinstance(old,int) else []
+    details=[]
+    for idx in ids:
+        if not isinstance(idx,int) or idx<0 or idx>=len(characters):
+            continue
+        item=characters[idx]
+        name=(item.get("name") or "Character").strip()
+        desc=(item.get("description") or "").strip()
+        if desc:
+            details.append(f"Keep the same recurring character identity for {name}: {desc}. Preserve facial features, hairstyle, age appearance, body type and clothing across scenes.")
+        else:
+            details.append(f"Keep the same recurring character identity and appearance for {name} as in the project's character reference.")
+    return " ".join(details)
+
 def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200):
     """Submit an exported ComfyUI API workflow, wait for its output and save the image locally."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
@@ -1674,7 +1694,14 @@ class VideoStudio:
         self.apply_scene_text()
         scene=self.project["scenes"][i]
         request=scene.get("visual_request","")
-        prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+scene.get("text","")+" "+request).strip()
+        character_cues=build_character_consistency_prompt(scene,self.project.get("characters",[]))
+        camera_cues=("Camera framing: "+next((label for keys,label in [
+            (("yakın plan","yakın çekim","close-up","close up"),"close-up shot"),
+            (("geniş açı","genel plan","uzak plan","wide shot"),"wide establishing shot"),
+            (("tepeden çekim","üst açı","kuş bakışı","top-down"),"high-angle overhead shot"),
+            (("alttan çekim","alt açı","low angle"),"low-angle shot")
+        ] if any(k in request.lower() for k in keys)),"cinematic eye-level framing")+". ")
+        prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
         self.comfy_busy=True
