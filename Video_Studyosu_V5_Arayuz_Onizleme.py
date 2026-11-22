@@ -505,7 +505,8 @@ class VideoStudio:
         self.wizard_data={"platform":"YouTube yatay video","character":"Karakter kullanma","voice":"Erkek — Ahmet","caption":"Türkçe altyazı","script":""}
         self.wizard_step=0
         win=tk.Toplevel(self.root); self.wizard_win=win
-        win.title("Yeni Video — Adım adım kurulum"); win.geometry("700x520"); win.transient(self.root); win.grab_set()
+        win.title("Yeni Video — Adım adım kurulum"); win.geometry("700x520"); win.transient(self.root)
+        # Sihirbaz modal değildir: kullanıcı karakter stüdyosu ve senarist sekmelerine geçebilir.
         self.wizard_body=ttk.Frame(win,padding=22); self.wizard_body.pack(fill="both",expand=True)
         self.wizard_footer=ttk.Frame(win,padding=(22,8)); self.wizard_footer.pack(fill="x")
         self.wizard_back_btn=ttk.Button(self.wizard_footer,text="← Geri",command=self.wizard_back)
