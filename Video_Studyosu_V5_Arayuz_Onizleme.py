@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Karabudak Film Stüdyoları V5.5.1"
-APP_VERSION = "5.5.1"
+APP_NAME = "Karabudak Film Stüdyoları V5.5.2"
+APP_VERSION = "5.5.2"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -981,8 +981,10 @@ class VideoStudio:
                 package_type = "tam"
             if not asset:
                 raise RuntimeError("Yeni sürüm bulundu ancak uyumlu yama veya tam kurulum paketi yayımlanmamış.")
-            self.root.after(0, lambda v=tag, p=package_type: self.set_status(f"{v} {p} güncellemesi indiriliyor..."))
-            threading.Thread(target=self._download_and_install_update, args=(tag, asset.get("browser_download_url", "")), daemon=True).start()
+            download_url = asset.get("browser_download_url", "")
+            if not download_url:
+                raise RuntimeError("Yeni sürüm paketi için indirme bağlantısı bulunamadı.")
+            self.root.after(0, lambda v=tag, p=package_type: self._ask_update(v, download_url, p))
         except Exception as exc:
             if not silent: self.root.after(0, lambda e=str(exc): messagebox.showerror("Güncelleme kontrolü", "Güncelleme kontrol edilemedi.\n" + e))
 
@@ -991,10 +993,21 @@ class VideoStudio:
         nums = re.findall(r"\d+", str(value))
         return tuple(int(x) for x in nums[:4]) if nums else (0,)
 
-    def _ask_update(self, version, download_url):
-        if not messagebox.askyesno("Yeni sürüm", f"Yeni sürüm bulundu: {version}\nŞimdi indirip kurmak ister misiniz? Proje ve video klasörleriniz korunur."):
+    def _ask_update(self, version, download_url, package_type="tam"):
+        accepted = messagebox.askyesno(
+            "Yeni sürüm bulundu",
+            f"Yeni sürüm: {version} ({package_type} paket)\\n"
+            "Güncellemeyi şimdi indirip kurmak ister misiniz?\\n"
+            "Projeleriniz ve dışa aktardığınız videolar korunur."
+        )
+        if not accepted:
+            self.set_status("Güncelleme kullanıcı tarafından iptal edildi.")
             return
-        threading.Thread(target=self._download_and_install_update, args=(version, download_url), daemon=True).start()
+        threading.Thread(
+            target=self._download_and_install_update,
+            args=(version, download_url),
+            daemon=True
+        ).start()
 
     def _download_and_install_update(self, version, download_url):
         try:
