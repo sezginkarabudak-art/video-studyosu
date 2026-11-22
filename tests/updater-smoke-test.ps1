@@ -19,9 +19,16 @@ function Write-Manifest([string]$path, [object[]]$files) {
 }
 function Invoke-UpdaterBatch([string]$batchPath, [string]$targetPath) {
   $commandLine = 'call "{0}" "{1}"' -f $batchPath, $targetPath
+  Write-Host "Running CMD: $commandLine"
   $output = & $env:ComSpec /d /c $commandLine 2>&1
-  $output | ForEach-Object { Write-Host $_ }
-  return $LASTEXITCODE
+  foreach ($line in $output) { Write-Host "BATCH: $line" }
+  $exitCode = $LASTEXITCODE
+  Write-Host "BATCH EXIT: $exitCode"
+  $logPath = Join-Path $env:LOCALAPPDATA 'VideoStudyosu\update.log'
+  if (Test-Path -LiteralPath $logPath) {
+    Get-Content -LiteralPath $logPath -Tail 12 | ForEach-Object { Write-Host "UPDATER LOG: $_" }
+  }
+  return $exitCode
 }
 try {
   $whereExe = Join-Path $env:WINDIR 'System32\where.exe'
