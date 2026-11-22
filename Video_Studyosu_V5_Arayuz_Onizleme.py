@@ -9,8 +9,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.4"
-APP_VERSION = "5.6.4"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.5"
+APP_VERSION = "5.6.5"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -172,8 +172,33 @@ def comfyui_upload_reference_image(base_url, image_path):
     return name
 
 
+def rank_visual_checkpoint(checkpoints):
+    """Prefer realistic SDXL checkpoints over arbitrary first-in-list models."""
+    def score(name):
+        value=str(name).lower()
+        points=0
+        if "sdxl" in value or "xl" in value: points += 30
+        if any(token in value for token in ("realvis", "juggernaut", "realistic", "cinematic", "epicrealism", "absolute reality")): points += 45
+        if any(token in value for token in ("pony", "anime", "illustration", "cartoon", "toon", "waifu", "furry")): points -= 100
+        if any(token in value for token in ("turbo", "lightning", "lcm")): points -= 8
+        return points
+    return sorted(checkpoints, key=lambda item: (score(item), str(item).lower()), reverse=True)[0]
+
+
+def visual_generation_dimensions(width, height, is_sdxl=True):
+    """Choose training-friendly dimensions for the requested aspect ratio."""
+    ratio=float(width)/max(1,float(height))
+    if is_sdxl:
+        if ratio < 0.80: return 768, 1344
+        if ratio > 1.25: return 1344, 768
+        return 1024, 1024
+    if ratio < 0.80: return 512, 768
+    if ratio > 1.25: return 768, 512
+    return 640, 640
+
+
 def create_default_comfyui_workflow(base_url, width=1024, height=1024):
-    """Create a standard API workflow automatically using an installed ComfyUI checkpoint."""
+    """Build a quality-oriented workflow and enable IPAdapter when its nodes are installed."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
     request=urllib.request.Request(base_url+"/models/checkpoints",headers={"User-Agent":"VideoStudyosu"})
     try:
@@ -182,17 +207,43 @@ def create_default_comfyui_workflow(base_url, width=1024, height=1024):
     except Exception as exc:
         raise RuntimeError("ComfyUI'ye ulaşılamadı. Önce yerel ComfyUI'yi başlat. Ayrıntı: "+str(exc))
     if not isinstance(checkpoints,list) or not checkpoints:
-        raise RuntimeError("ComfyUI bağlı ancak yüklü checkpoint modeli bulunamadı. Bir SD 1.5 veya SDXL checkpoint modelini ComfyUI/models/checkpoints klasörüne kur.")
-    checkpoint=checkpoints[0]
+        raise RuntimeError("ComfyUI bağlı ancak yüklü checkpoint modeli bulunamadı. Gerçekçi SDXL checkpoint modelini ComfyUI/models/checkpoints klasörüne kur.")
+    checkpoint=rank_visual_checkpoint(checkpoints)
+    is_sdxl=("xl" in str(checkpoint).lower() or "sdxl" in str(checkpoint).lower())
+    gen_width,gen_height=visual_generation_dimensions(width,height,is_sdxl=is_sdxl)
+    ipadapter_ready=False
+    try:
+        with urllib.request.urlopen(base_url+"/object_info/IPAdapterUnifiedLoader",timeout=8) as response:
+            unified_info=json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(base_url+"/object_info/IPAdapterAdvanced",timeout=8) as response:
+            advanced_info=json.loads(response.read().decode("utf-8"))
+        ipadapter_ready=bool(unified_info and advanced_info)
+    except Exception:
+        ipadapter_ready=False
+    positive=("photorealistic cinematic movie still, live-action feature film frame, real human actors, "
+              "physically plausible environment, natural skin texture, realistic eyes and hands, "
+              "professional cinematography, detailed production design, realistic lighting, "
+              "subtle film grain, high dynamic range, coherent perspective, precise subject placement")
+    negative=("cartoon, illustration, drawing, sketch, stick figure, anime, comic, vector art, "
+              "flat graphic, geometric placeholder, 2d animation, painting, 3d toy, plastic skin, "
+              "uncanny face, deformed anatomy, malformed hands, extra fingers, duplicate people, "
+              "blurry, low resolution, oversaturated, text, subtitles, watermark, collage, border")
     workflow={
         "1":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":checkpoint}},
-        "2":{"class_type":"CLIPTextEncode","inputs":{"text":"cinematic photorealistic film still, detailed environment, natural lighting","clip":["1",1]}},
-        "3":{"class_type":"CLIPTextEncode","inputs":{"text":"blurry, low quality, bad anatomy, extra fingers, duplicate people, text, watermark, collage","clip":["1",1]}},
-        "4":{"class_type":"EmptyLatentImage","inputs":{"width":int(width),"height":int(height),"batch_size":1}},
-        "5":{"class_type":"KSampler","inputs":{"seed":int(time.time())%(2**32),"steps":25,"cfg":7.0,"sampler_name":"dpmpp_2m","scheduler":"karras","denoise":1.0,"model":["1",0],"positive":["2",0],"negative":["3",0],"latent_image":["4",0]}},
+        "2":{"class_type":"CLIPTextEncode","inputs":{"text":positive,"clip":["1",1]}},
+        "3":{"class_type":"CLIPTextEncode","inputs":{"text":negative,"clip":["1",1]}},
+        "4":{"class_type":"EmptyLatentImage","inputs":{"width":gen_width,"height":gen_height,"batch_size":1}},
+        "5":{"class_type":"KSampler","inputs":{"seed":int(time.time())%(2**32),"steps":32 if is_sdxl else 28,"cfg":6.0,"sampler_name":"dpmpp_2m","scheduler":"karras","denoise":1.0,"model":["1",0],"positive":["2",0],"negative":["3",0],"latent_image":["4",0]}},
         "6":{"class_type":"VAEDecode","inputs":{"samples":["5",0],"vae":["1",2]}},
         "7":{"class_type":"SaveImage","inputs":{"filename_prefix":"VideoStudyosu/Scene","images":["6",0]}}
     }
+    if ipadapter_ready:
+        workflow["8"]={"class_type":"IPAdapterUnifiedLoader","inputs":{"model":["1",0],"preset":"PLUS (high strength)"}}
+        workflow["9"]={"class_type":"IPAdapterAdvanced","inputs":{
+            "model":["8",0],"ipadapter":["8",1],"image":["10",0],"weight":0.85,
+            "weight_type":"linear","combine_embeds":"concat","start_at":0.0,"end_at":0.85,
+            "embeds_scaling":"V only"}}
+        workflow["5"]["inputs"]["model"]=["9",0]
     target=Path(tempfile.gettempdir())/"video_studyosu_auto_workflow.json"
     target.write_text(json.dumps(workflow,ensure_ascii=False,indent=2),encoding="utf-8")
     return str(target),checkpoint
@@ -2072,9 +2123,9 @@ class VideoStudio:
         prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
-        character_images=[] if automatic_workflow else collect_character_reference_images(scene,self.project.get("characters",[]))
-        if automatic_workflow and collect_character_reference_images(scene,self.project.get("characters",[])):
-            self.comfy_status.config(text="Otomatik üretim: karakter metin tanımı kullanılıyor; fotoğrafla yüz sabitleme için IPAdapter iş akışı gerekir.")
+        character_images=collect_character_reference_images(scene,self.project.get("characters",[]))
+        if character_images and automatic_workflow:
+            self.comfy_status.config(text="Karakter fotoğrafları referans olarak bağlanıyor; IPAdapter Plus kurulumu gerekli.")
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
         self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
@@ -2132,7 +2183,7 @@ class VideoStudio:
                             "Do not use abstract shapes, text, captions, collages or graphic placeholders. "
                             +camera_cues+scene.get("text","")+" "+character_cues+" "+continuity_cues).strip()
                     seed=int(hashlib.sha256((str(index)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
-                    refs=[] if automatic_workflow else collect_character_reference_images(scene,characters)
+                    refs=collect_character_reference_images(scene,characters)
                     self.root.after(0,lambda n=index+1,total=len(scenes):self.comfy_status.config(text=f"AI görseli üretiliyor: {n}/{total}"))
                     result=comfyui_generate_image(base_url,workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
                     results.append((index,result))
