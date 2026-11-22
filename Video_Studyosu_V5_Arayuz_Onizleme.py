@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.3.9 - Görsel Stüdyo"
-APP_VERSION = "5.3.9"
+APP_NAME = "Karabudak Film Stüdyoları V5.4.0"
+APP_VERSION = "5.4.0"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -427,8 +427,8 @@ class VideoStudio:
         top=ttk.Frame(self.root,padding=10); top.pack(fill="x")
         self.menu_button=ttk.Button(top,text="☰  MENÜ",command=self.toggle_menu)
         self.menu_button.pack(side="left", padx=(0,12))
-        ttk.Label(top,text="SEZGİN KARABUDAK",font=("Segoe UI",18,"bold")).pack(side="left")
-        ttk.Label(top,text="Sahneye özel görseller • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
+        ttk.Label(top,text="KARABUDAK FİLM STÜDYOLARI",font=("Segoe UI",16,"bold"),foreground="#9b542d").pack(side="left")
+        ttk.Label(top,text="Film üretim merkezi  •  Senaryo  •  Karakter  •  Sahne",foreground=muted).pack(side="left",padx=18)
         try: style.layout("Hidden.TNotebook.Tab", [])
         except Exception: pass
         style.configure("Hidden.TNotebook",background=bg,borderwidth=0)
@@ -460,18 +460,44 @@ class VideoStudio:
             self._apply_dark_widgets(child)
 
     def build_home_tab(self):
-        ttk.Label(self.home_tab,text="Video Studyosu",font=("Segoe UI",25,"bold")).pack(anchor="w",pady=(10,4))
-        ttk.Label(self.home_tab,text="Fikrinden videoya — adım adım üretim alanı",font=("Segoe UI",12),foreground="#555").pack(anchor="w",pady=(0,24))
-        start=ttk.LabelFrame(self.home_tab,text="Yeni bir video projesi başlat",padding=24)
+        # Karabudak Film Stüdyoları için özel sinematik ana ekran görseli
+        hero=tk.Canvas(self.home_tab,height=230,bg="#10131a",highlightthickness=0)
+        hero.pack(fill="x",pady=(4,18))
+        hero.create_rectangle(0,0,1800,230,fill="#10131a",outline="")
+        for y in (10,202):
+            hero.create_rectangle(0,y,1800,y+18,fill="#252a32",outline="")
+            for x in range(12,1800,34):
+                hero.create_rectangle(x,y+4,x+18,y+14,fill="#b88a55",outline="")
+        hero.create_oval(760,42,900,182,fill="#252a32",outline="#c99a62",width=4)
+        hero.create_oval(792,74,868,150,fill="#10131a",outline="#c99a62",width=4)
+        hero.create_oval(812,94,848,130,fill="#b88a55",outline="#e7c99c",width=2)
+        hero.create_oval(900,30,1010,140,fill="#252a32",outline="#c99a62",width=4)
+        hero.create_oval(926,56,984,114,fill="#10131a",outline="#c99a62",width=3)
+        hero.create_rectangle(860,100,1100,174,fill="#252a32",outline="#c99a62",width=3)
+        hero.create_polygon(1080,110,1195,80,1195,194,1080,164,fill="#252a32",outline="#c99a62",width=3)
+        hero.create_line(950,174,920,205,fill="#c99a62",width=6)
+        hero.create_line(1030,174,1060,205,fill="#c99a62",width=6)
+        hero.create_rectangle(1170,130,1330,190,fill="#1c2028",outline="#c99a62",width=3)
+        for x in range(1180,1325,38):
+            hero.create_polygon(x,132,x+20,132,x+36,150,x+16,150,fill="#c99a62",outline="")
+        hero.create_text(1250,168,text="KARABUDAK",fill="#f1dfc5",font=("Segoe UI",11,"bold"))
+        hero.create_text(34,72,anchor="w",text="KARABUDAK",fill="#f3dfc1",font=("Segoe UI",31,"bold"))
+        hero.create_text(36,116,anchor="w",text="FİLM STÜDYOLARI",fill="#d28b53",font=("Segoe UI",20,"bold"))
+        hero.create_line(36,137,600,137,fill="#a8322d",width=4)
+        hero.create_text(38,166,anchor="w",text="Fikrinden sahneye, sahneden filme.",fill="#d6d8dc",font=("Segoe UI",13))
+        hero.create_text(38,188,anchor="w",text="Kendi hikâyeni burada üret.",fill="#9da5b0",font=("Segoe UI",10))
+        ttk.Label(self.home_tab,text="Karabudak Film Stüdyoları",font=("Segoe UI",22,"bold")).pack(anchor="w",pady=(0,4))
+        ttk.Label(self.home_tab,text="Fikrinden videoya — profesyonel film üretim alanı",font=("Segoe UI",12),foreground="#555").pack(anchor="w",pady=(0,14))
+        start=ttk.LabelFrame(self.home_tab,text="Yeni bir film projesi başlat",padding=24)
         start.pack(fill="x",pady=8)
-        ttk.Label(start,text="Önce platformu seç, ardından karakter, ses, altyazı ve senaryonu belirle. Sonra sahneleri düzenleyip ön izlemeden geç.",wraplength=850,font=("Segoe UI",11)).pack(anchor="w",pady=(0,16))
-        ttk.Button(start,text="▶  VİDEO YAPALIM",command=self.start_wizard).pack(anchor="w",ipadx=28,ipady=14)
-        tiles=ttk.Frame(self.home_tab); tiles.pack(fill="x",pady=22)
-        for title,desc,tab in [("Senarist","Fikirden senaryo taslağına",4),("Karakter stüdyosu","Karakterlerini kaydet ve tekrar kullan",3),("Eski videoyu düzenle","Format veya altyazı üzerinde çalış",6)]:
+        ttk.Label(start,text="Platformu seç; karakterlerini, sesini ve senaryonu belirle. Ardından sahneleri tek tek düzenleyip videonu oluştur.",wraplength=850,font=("Segoe UI",11)).pack(anchor="w",pady=(0,16))
+        ttk.Button(start,text="▶  YENİ VİDEO OLUŞTUR",command=self.start_wizard).pack(anchor="w",ipadx=28,ipady=14)
+        tiles=ttk.Frame(self.home_tab); tiles.pack(fill="x",pady=18)
+        for title,desc,tab in [("Senaryo Yazarı","Fikirden senaryo taslağına",4),("Karakter Stüdyosu","Karakterlerini kaydet ve tekrar kullan",3),("Sahne Düzenleyici","Sahneleri ayrı ayrı düzenle",1)]:
             card=ttk.LabelFrame(tiles,text=title,padding=14); card.pack(side="left",fill="both",expand=True,padx=5)
             ttk.Label(card,text=desc,wraplength=220).pack(anchor="w",pady=(0,10))
             ttk.Button(card,text="Bölümü aç",command=lambda i=tab:self._select_tab(i)).pack(anchor="w")
-        ttk.Label(self.home_tab,text="Kayıtlı projeler ve videolar bilgisayarında saklanır. Senarist ayrı bir sekmedir.",foreground="#666").pack(anchor="w",pady=10)
+        ttk.Label(self.home_tab,text="Projelerin ve videoların bilgisayarında saklanır.  •  Karabudak Film Stüdyoları",foreground="#666").pack(anchor="w",pady=8)
 
     def toggle_menu(self):
         if self.menu_popup is not None and self.menu_popup.winfo_exists():
@@ -635,7 +661,7 @@ class VideoStudio:
         except Exception as e: messagebox.showerror("Dönüştürme hatası",str(e))
 
     def build_update_tab(self):
-        box=ttk.LabelFrame(self.update_tab,text="Video Studyosu güncelleme merkezi",padding=18)
+        box=ttk.LabelFrame(self.update_tab,text="Karabudak Film Stüdyoları güncelleme merkezi",padding=18)
         box.pack(fill="x",anchor="n")
         ttk.Label(box,text=f"Kurulu sürüm: {APP_VERSION}",font=("Segoe UI",12,"bold")).pack(anchor="w",pady=(0,8))
         ttk.Label(box,text="Yeni sürümler açılışta otomatik kontrol edilir; bulunduğunda arka planda indirilip kurulur. Proje ve video klasörlerin korunur.",wraplength=760,justify="left").pack(anchor="w",pady=(0,14))
