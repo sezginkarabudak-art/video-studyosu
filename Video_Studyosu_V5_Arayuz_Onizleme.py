@@ -236,8 +236,6 @@ def install_visual_engine(progress=None):
         raise RuntimeError("Otomatik görsel motoru kurulumu şu anda Windows içindir.")
     root=HOME/"AppData"/"Local"/"VideoStudyosu"/"AIEngine"
     comfy=root/"ComfyUI"
-    if (comfy/"main.py").is_file():
-        return comfy
     drive=Path(root.anchor)
     free=shutil.disk_usage(drive).free
     if free < 18*1024**3:
@@ -260,14 +258,11 @@ def install_visual_engine(progress=None):
     if not candidates:
         raise RuntimeError("İndirilen ComfyUI paketinde ana motor dosyası bulunamadı.")
     found=candidates[0]
-    if found!=comfy:
-        if comfy.exists(): shutil.rmtree(comfy,ignore_errors=True)
-        shutil.move(str(found),str(comfy))
-    py_candidates=[root/"python_embeded"/"python.exe",comfy.parent/"python_embeded"/"python.exe"]
+    py_candidates=[found.parent/"python_embeded"/"python.exe",root/"python_embeded"/"python.exe"]
     py=next((p for p in py_candidates if p.is_file()),None)
     if py is None:
         raise RuntimeError("ComfyUI Python çalışma ortamı pakette bulunamadı.")
-    model=comfy/"models"/"checkpoints"/"RealVisXL_V5.0_fp16.safetensors"
+    model=found/"models"/"checkpoints"/"RealVisXL_V5.0_fp16.safetensors"
     if not model.is_file() or model.stat().st_size<6_000_000_000:
         if progress: progress("Fotogerçekçi RealVisXL modeli indiriliyor (yaklaşık 6,94 GB)")
         _download_file(
@@ -281,7 +276,7 @@ def install_visual_engine(progress=None):
         model.unlink(missing_ok=True)
         raise RuntimeError("İndirilen görsel modelinin SHA256 doğrulaması başarısız. Güvenlik için dosya silindi.")
     if progress: progress("Gerçekçi görsel modeli doğrulandı; motor hazır")
-    return comfy
+    return found
 
 
 def ensure_visual_models_and_reference_support(install, progress=None):
@@ -324,7 +319,9 @@ def ensure_comfyui_running(base_url="http://127.0.0.1:8188", startup_timeout=240
     """Install if absent, start the local engine and wait for its API."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
     try:
-        with urllib.request.urlopen(base_url+"/system_stats",timeout=2): return True
+        with urllib.request.urlopen(base_url+"/system_stats",timeout=2):
+            # The engine is already running. Avoid replacing files underneath a live process.
+            return True
     except Exception: pass
     install=find_comfyui_installation()
     if install is None:
