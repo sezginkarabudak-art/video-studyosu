@@ -3,7 +3,7 @@
 Video Studyosu V4 - API'siz görsel kompozisyon + video üretimi
 Not: Görseller, Pillow ile oluşturulan özgün grafik kompozisyonlardır; AI image generation değildir.
 """
-import os, sys, json, math, random, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile
+import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
