@@ -2067,7 +2067,8 @@ class VideoStudio:
                         self.voice_status.config(text="Türkçe ses listesi alınamadı; mevcut sesler kullanılacak.")
                 self.root.after(0,done)
             except Exception as exc:
-                self.root.after(0,lambda:self.voice_status.config(text=f"Ses listesi alınamadı: {exc}"))
+                error_text=str(exc)
+                self.root.after(0,lambda e=error_text:self.voice_status.config(text=f"Ses listesi alınamadı: {e}"))
         threading.Thread(target=worker,daemon=True).start()
 
     def selected_voice_name(self):
