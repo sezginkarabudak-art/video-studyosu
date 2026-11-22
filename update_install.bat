@@ -3,14 +3,7 @@ setlocal EnableExtensions
 chcp 65001 >nul
 title Video Studyosu - Guncelleme
 set "TARGET=%~1"
-if exist "%~dp0manifest.json" (
-  if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
-  rem IMPORTANT: use %~dp0. so the argument does not end in a backslash before
-  rem the closing quote; Windows command-line parsing can otherwise retain the quote.
-  set "PACKAGE_DIR=%~dp0."
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -Target "%TARGET%" -Package "%PACKAGE_DIR%"
-  exit /b %errorlevel%
-)
+if exist "%~dp0manifest.json" goto :PATCH_INSTALL
 if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
 for %%I in ("%TARGET%") do set "TARGETDIR=%%~dpI"
 if not exist "%TARGETDIR%" mkdir "%TARGETDIR%"
@@ -66,3 +59,11 @@ set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
 ) > "%PS1%"
 start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
 exit /b 0
+
+:PATCH_INSTALL
+if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
+rem IMPORTANT: use %~dp0. so the argument does not end in a backslash before
+rem the closing quote; Windows command-line parsing can otherwise retain the quote.
+set "PACKAGE_DIR=%~dp0."
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -Target "%TARGET%" -Package "%PACKAGE_DIR%"
+exit /b %errorlevel%
