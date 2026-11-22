@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.2 - Siyah Beyaz"
-APP_VERSION = "5.2.1"
+APP_NAME = "Video Studyosu V5.3 - Görsel Stüdyo"
+APP_VERSION = "5.3.0"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -110,6 +110,65 @@ def interpret_scene_request(text, request=""):
     c1,c2,kind = palette_for(combined)
     return c1,c2,kind,style,notes
 
+def draw_scene_subjects(draw, text, w, h, kind, seed):
+    """Sahne metnindeki mekân ve nesne ipuçlarına göre ayrı kompozisyonlar çizer."""
+    t=(text or "").lower()
+    rng=random.Random(seed + sum(ord(ch) for ch in t[:180]))
+    def ln(points, fill=(5,5,8,235), width=5):
+        draw.line(points, fill=fill, width=width)
+    if any(k in t for k in ["koridor","oda","içeri girdi","kapıyı aç","evin içinde"]):
+        van=(int(w*.52),int(h*.40))
+        ln([(0,int(h*.08)),van,(w,int(h*.08))],(8,8,12,230),12)
+        ln([(0,int(h*.82)),van,(w,int(h*.82))],(8,8,12,230),14)
+        draw.rectangle((int(w*.67),int(h*.20),int(w*.87),int(h*.72)),fill=(5,6,10,245),outline=(130,115,95,220),width=5)
+        draw.rectangle((int(w*.71),int(h*.25),int(w*.83),int(h*.70)),fill=(1,2,5,255))
+        for j in range(6):
+            y=int(h*(.58+j*.04)); ln([(0,y),(w,y)],(110,95,75,35),2)
+    elif any(k in t for k in ["yol","sokak","cadde","araba","patika","köye doğru"]):
+        van=(int(w*.50),int(h*.39))
+        draw.polygon([(int(w*.29),h),(int(w*.71),h),van],fill=(18,19,23,245))
+        ln([(int(w*.29),h),van,(int(w*.71),h)],(145,140,125,140),3)
+        for side in [0,1]:
+            x=int(w*(.08 if side==0 else .92))
+            for j in range(6):
+                y=int(h*(.35+j*.09))
+                ln([(x,y),(x+rng.randint(-40,40),y-rng.randint(45,100))],(3,10,9,245),rng.randint(5,13))
+    elif any(k in t for k in ["pencere","camdan","perde","siluet"]):
+        draw.rectangle((int(w*.22),int(h*.12),int(w*.78),int(h*.78)),fill=(5,8,15,245),outline=(130,130,135,220),width=9)
+        ln([(int(w*.5),int(h*.13)),(int(w*.5),int(h*.77))],(145,145,150,190),5)
+        ln([(int(w*.23),int(h*.45)),(int(w*.77),int(h*.45))],(145,145,150,190),5)
+        draw.ellipse((int(w*.45),int(h*.28),int(w*.56),int(h*.52)),fill=(1,2,5,255))
+        draw.polygon([(int(w*.40),int(h*.77)),(int(w*.43),int(h*.49)),(int(w*.57),int(h*.49)),(int(w*.62),int(h*.77))],fill=(1,2,5,255))
+    elif any(k in t for k in ["bebek","oyuncak","kukla"]):
+        cx,cy=int(w*.5),int(h*.67); rr=int(min(w,h)*.09)
+        draw.ellipse((cx-rr,cy-2*rr,cx+rr,cy),fill=(190,165,135,245),outline=(25,20,20,255),width=4)
+        draw.ellipse((cx-rr*.48,cy-rr,cx-rr*.20,cy-rr*.72),fill=(5,5,8,255))
+        draw.ellipse((cx+rr*.20,cy-rr,cx+rr*.48,cy-rr*.72),fill=(5,5,8,255))
+        draw.polygon([(cx-rr,cy-rr*.1),(cx+rr,cy-rr*.1),(cx+rr*1.4,cy+rr*2),(cx-rr*1.4,cy+rr*2)],fill=(45,35,38,245))
+    elif any(k in t for k in ["orman","ağaç","çalılık"]):
+        for j in range(20):
+            x=rng.randint(-20,w+20); top=rng.randint(int(h*.1),int(h*.5)); base=rng.randint(int(h*.68),h)
+            draw.polygon([(x,top),(x-rng.randint(25,70),base),(x+rng.randint(25,70),base)],fill=(3,20,15,240))
+    elif any(k in t for k in ["mezar","mezarlık","tabut"]):
+        for j in range(7):
+            x=int(w*(.06+j*.13)); y=int(h*(.63+rng.random()*.1)); ww=int(w*.07); hh=int(h*.18)
+            draw.rounded_rectangle((x,y,x+ww,y+hh),radius=12,fill=(55,58,62,245),outline=(160,160,155,180),width=3)
+    elif any(k in t for k in ["saray","padişah","sultan","osmanlı"]):
+        draw.rectangle((int(w*.25),int(h*.35),int(w*.75),int(h*.82)),fill=(65,43,30,245),outline=(190,145,80,220),width=5)
+        for x in [int(w*.34),int(w*.50),int(w*.66)]:
+            draw.ellipse((x-int(w*.045),int(h*.18),x+int(w*.045),int(h*.4)),fill=(90,55,35,245),outline=(205,165,95,210),width=4)
+    elif any(k in t for k in ["deniz","sahil","gemi","tekne","dalga"]):
+        draw.rectangle((0,int(h*.53),w,h),fill=(8,35,55,235))
+        for j in range(12):
+            y=int(h*(.58+j*.025)); ln([(rng.randint(0,w//3),y),(rng.randint(w//2,w),y)],(130,180,195,100),2)
+    elif any(k in t for k in ["koş","kaç","geldi","gördü","bekliy","yaklaştı","adam","kadın","çocuk","insan"]):
+        cx,cy=int(w*.52),int(h*.68); rr=int(min(w,h)*.045)
+        draw.ellipse((cx-rr,cy-3*rr,cx+rr,cy-rr),fill=(2,4,8,250))
+        draw.polygon([(cx-rr,cy-rr),(cx+rr,cy-rr),(cx+2*rr,cy+2*rr),(cx-2*rr,cy+2*rr)],fill=(2,4,8,250))
+        ln([(cx-rr,cy+rr),(cx-3*rr,cy+3*rr)],(2,4,8,255),max(5,rr//2))
+        ln([(cx+rr,cy+rr),(cx+3*rr,cy+3*rr)],(2,4,8,255),max(5,rr//2))
+
+
 def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_text=True):
     """API'siz, Pillow tabanlı özgün atmosferik grafik kompozisyonu."""
     w,h=size
@@ -194,7 +253,7 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     if style["red"]:
         od.rectangle((0,0,w,h),fill=(100,0,10,18))
     im=Image.alpha_composite(im.convert("RGBA"),overlay).convert("RGB")
-    # Optional original Turkish scene label; disabled during video rendering
+    # Her sahneye metin tabanlı ayrı ön plan kompozisyonu ekle.\n    draw_scene_subjects(ImageDraw.Draw(im, "RGBA"), text + " " + request, w, h, kind, seed)\n    # Optional original Turkish scene label; disabled during video rendering
     # because the selected subtitle language is composited separately.
     if draw_text:
         d=ImageDraw.Draw(im,"RGBA")
@@ -353,8 +412,8 @@ class VideoStudio:
         style.configure("TProgressbar",background="#eeeeee",troughcolor=panel,bordercolor=line)
         style.configure("TSeparator",background=line)
         top=ttk.Frame(self.root,padding=10); top.pack(fill="x")
-        ttk.Label(top,text="VIDEO STUDYOSU V5.2",font=("Segoe UI",18,"bold")).pack(side="left")
-        ttk.Label(top,text="API'siz görsel • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
+        ttk.Label(top,text="VIDEO STUDYOSU V5.3",font=("Segoe UI",18,"bold")).pack(side="left")
+        ttk.Label(top,text="Sahneye özel görseller • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
         nb=ttk.Notebook(self.root); nb.pack(fill="both",expand=True,padx=10,pady=(0,10))
         self.editor=ttk.Frame(nb,padding=10); nb.add(self.editor,text="Video düzenleme / sahneler")
         self.library=ttk.Frame(nb,padding=10); nb.add(self.library,text="Video kütüphanem")
@@ -704,7 +763,7 @@ class VideoStudio:
         self.progress.pack(fill="x",pady=8)
         self.status=ttk.Label(right,text="Hazır",wraplength=300)
         self.status.pack(anchor="w")
-        ttk.Label(right,text="Görsel üretimi: API'siz grafik kompozisyonudur; gerçek AI resmi değildir.",wraplength=300,foreground="#666").pack(anchor="w",pady=15)
+        ttk.Label(right,text="Görsel motoru 2.0: Sahne metnine göre farklı yerel sinematik kompozisyonlar üretir; gerçek AI resmi değildir.",wraplength=300,foreground="#666").pack(anchor="w",pady=15)
 
     def build_library(self):
         ttk.Label(self.library,text="Bu bilgisayarda oluşturulan videolar",font=("Segoe UI",12,"bold")).pack(anchor="w")
