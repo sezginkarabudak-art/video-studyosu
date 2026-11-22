@@ -2197,30 +2197,12 @@ class VideoStudio:
         if i is None:
             messagebox.showinfo("Sahne seç","Önce görsel üretilecek sahneyi seç.")
             return
-        workflow=""
-        automatic_workflow=True
-        base_url="http://127.0.0.1:8188"
-        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
-        if automatic_workflow:
-            try:
-                ensure_comfyui_running(base_url)
-                ensure_comfyui_running(base_url)
-                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
-                self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
-            except Exception as exc:
-                messagebox.showerror("Görsel motoru hazır değil",str(exc))
-                self.comfy_status.config(text="Görsel motoru hazır değil: "+str(exc))
-                return
-        elif not Path(workflow).is_file():
-            messagebox.showerror("İş akışı bulunamadı","Seçilen JSON dosyası artık bulunamıyor. Otomatik mod için dosya seçimini temizle.")
-            return
-        if getattr(self,"comfy_busy",False):
-            messagebox.showinfo("İşlem sürüyor","ComfyUI görsel üretimi zaten devam ediyor.")
-            return
+        if getattr(self,"comfy_busy",False): return
         self.apply_scene_text()
-        scene=self.project["scenes"][i]
+        scene=dict(self.project["scenes"][i])
+        characters=list(self.project.get("characters",[]))
         request=scene.get("visual_request","")
-        character_cues=build_character_consistency_prompt(scene,self.project.get("characters",[]))
+        character_cues=build_character_consistency_prompt(scene,characters)
         continuity_cues=build_scene_continuity_prompt(scene,i,self.project.get("scenes",[]))
         camera_cues=("Camera framing: "+next((label for keys,label in [
             (("yakın plan","yakın çekim","close-up","close up"),"close-up shot"),
@@ -2228,19 +2210,24 @@ class VideoStudio:
             (("tepeden çekim","üst açı","kuş bakışı","top-down"),"high-angle overhead shot"),
             (("alttan çekim","alt açı","low angle"),"low-angle shot")
         ] if any(k in request.lower() for k in keys)),"cinematic eye-level framing")+". ")
-        prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
+        prompt_text=("Photorealistic live-action cinematic film still, real actors, natural skin texture, "
+                     "physically accurate lighting and detailed production design. "+camera_cues+
+                     scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
-        character_images=collect_character_reference_images(scene,self.project.get("characters",[]))
-        if character_images and automatic_workflow:
-            self.comfy_status.config(text="Karakter fotoğrafları referans olarak bağlanıyor; IPAdapter Plus kurulumu gerekli.")
+        character_images=collect_character_reference_images(scene,characters)
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
-        self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
-        self.set_status("Gerçek AI görseli ComfyUI ile üretiliyor...")
+        self.comfy_status.config(text="Görsel motoru otomatik hazırlanıyor...")
+        self.set_status("Görsel motoru hazırlanıyor; ilk kurulumda büyük dosyalar indirilebilir.")
         def worker():
             try:
-                result=comfyui_generate_image(base_url,workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
+                def progress(message):
+                    self.root.after(0,lambda m=message:self.comfy_status.config(text=m))
+                ensure_comfyui_running("http://127.0.0.1:8188",progress=progress)
+                workflow,checkpoint=create_default_comfyui_workflow("http://127.0.0.1:8188",width,height)
+                progress("Sahne görseli üretiliyor: "+Path(checkpoint).name)
+                result=comfyui_generate_image("http://127.0.0.1:8188",workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
                 self.root.after(0,lambda:self._comfy_visual_done(i,result,None))
             except Exception as exc:
                 message=str(exc)
@@ -2248,52 +2235,39 @@ class VideoStudio:
         threading.Thread(target=worker,daemon=True).start()
 
     def generate_all_comfy_visuals(self):
-        """Generate a real ComfyUI image for every scene, sequentially, without silent fallback."""
-        workflow=""
+        """Automatically install, configure and run the local visual engine for every scene."""
         if not self.project.get("scenes"):
             messagebox.showinfo("Sahne yok","Önce metni sahnelere ayır.")
             return
-        automatic_workflow=True
-        base_url="http://127.0.0.1:8188"
-        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
-        if automatic_workflow:
-            try:
-                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
-                self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
-            except Exception as exc:
-                messagebox.showerror("Görsel motoru hazır değil",str(exc))
-                self.comfy_status.config(text="Görsel motoru hazır değil: "+str(exc))
-                return
-        elif not Path(workflow).is_file():
-            messagebox.showerror("İş akışı bulunamadı","Seçilen JSON dosyası bulunamadı. Otomatik mod için dosya seçimini temizle.")
-            return
-        if getattr(self,"comfy_busy",False):
-            messagebox.showinfo("İşlem sürüyor","ComfyUI üretimi zaten devam ediyor.")
-            return
+        if getattr(self,"comfy_busy",False): return
         self.apply_scene_text_if_needed()
         scenes=[dict(scene) for scene in self.project["scenes"]]
         characters=list(self.project.get("characters",[]))
-        base_url="http://127.0.0.1:8188"
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
         self.comfy_busy=True
-        self.comfy_status.config(text=f"AI üretimi başladı: 0/{len(scenes)} sahne")
-        self.set_status("Gerçek AI sahne görselleri sırayla üretiliyor; işlem sürebilir...")
+        self.comfy_status.config(text="Görsel motoru otomatik hazırlanıyor...")
+        self.set_status("Görsel motoru hazırlanıyor; ilk kurulumda büyük dosyalar indirilebilir.")
         def worker():
             results=[]
             try:
+                def progress(message):
+                    self.root.after(0,lambda m=message:self.comfy_status.config(text=m))
+                ensure_comfyui_running("http://127.0.0.1:8188",progress=progress)
+                workflow,checkpoint=create_default_comfyui_workflow("http://127.0.0.1:8188",width,height)
                 for index,scene in enumerate(scenes):
                     request=scene.get("visual_request","")
                     character_cues=build_character_consistency_prompt(scene,characters)
                     continuity_cues=build_scene_continuity_prompt(scene,index,scenes)
                     camera_cues=("Cinematic camera framing. "+request+" ") if request else "Cinematic eye-level camera framing. "
-                    prompt=("Create a single coherent photorealistic cinematic film still. "
-                            "Show the exact action, people, objects and location described in this scene. "
-                            "Do not use abstract shapes, text, captions, collages or graphic placeholders. "
+                    prompt=("Create a single photorealistic live-action feature-film frame with real actors, "
+                            "natural skin texture, physically plausible anatomy, realistic lighting and production design. "
+                            "Show the exact action and location described; no illustration, cartoon, graphic placeholder or text. "
                             +camera_cues+scene.get("text","")+" "+character_cues+" "+continuity_cues).strip()
                     seed=int(hashlib.sha256((str(index)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
                     refs=collect_character_reference_images(scene,characters)
-                    self.root.after(0,lambda n=index+1,total=len(scenes):self.comfy_status.config(text=f"AI görseli üretiliyor: {n}/{total}"))
-                    result=comfyui_generate_image(base_url,workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
+                    self.root.after(0,lambda n=index+1,total=len(scenes):self.comfy_status.config(text=f"AI sahne görseli üretiliyor: {n}/{total}"))
+                    result=comfyui_generate_image("http://127.0.0.1:8188",workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
                     results.append((index,result))
                 self.root.after(0,lambda r=results:self._comfy_all_done(r,None))
             except Exception as exc:
