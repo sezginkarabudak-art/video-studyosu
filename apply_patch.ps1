@@ -10,6 +10,16 @@ $logDir = Join-Path $env:LOCALAPPDATA 'VideoStudyosu'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $log = Join-Path $logDir 'update.log'
 function Log([string]$m) { Add-Content -LiteralPath $log -Encoding UTF8 -Value "[$(Get-Date -Format o)] $m" }
+function Get-Sha256Hex([string]$Path) {
+  $algorithm = [System.Security.Cryptography.SHA256]::Create()
+  $stream = [System.IO.File]::OpenRead($Path)
+  try {
+    return ([System.BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+  } finally {
+    $stream.Dispose()
+    $algorithm.Dispose()
+  }
+}
 function Resolve-SafePath([string]$root, [string]$relative) {
   if ([string]::IsNullOrWhiteSpace($relative)) { throw 'Yama dosya yolu bos.' }
   $normalized = $relative.Replace('/', '\')
@@ -36,7 +46,7 @@ try {
       $src = Resolve-SafePath (Join-Path $Package 'payload') $rel
       $dst = Resolve-SafePath $targetDir $rel
       if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw 'Paket icerisinde dosya bulunamadi.' }
-      $actual = (Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash.ToLowerInvariant()
+      $actual = Get-Sha256Hex $src
       if ($actual -ne ([string]$item.sha256).ToLowerInvariant()) { throw 'SHA256 dogrulamasi basarisiz.' }
       $validated.Add([pscustomobject]@{ Relative=$rel; Source=$src; Destination=$dst })
     } catch { throw "Yama dosyasi kontrol edilemedi [$rel]: $($_.Exception.Message)" }
@@ -66,8 +76,8 @@ try {
     $changed.Add([pscustomobject]@{ Destination=$dst; Backup=$bak; Existed=$existed; Relative=$rel })
     New-Item -ItemType Directory -Force -Path ([System.IO.Path]::GetDirectoryName($dst)) | Out-Null
     [System.IO.File]::Copy($entry.Source,$dst,$true)
-    $check = (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant()
-    $expected = (Get-FileHash -LiteralPath $entry.Source -Algorithm SHA256).Hash.ToLowerInvariant()
+    $check = Get-Sha256Hex $dst
+    $expected = Get-Sha256Hex $entry.Source
     if ($check -ne $expected) { throw "Kurulum dogrulamasi basarisiz: $rel" }
     Log "Applied: $rel"
   }
