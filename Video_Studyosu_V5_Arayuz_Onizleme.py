@@ -172,6 +172,32 @@ def comfyui_upload_reference_image(base_url, image_path):
     return name
 
 
+def create_default_comfyui_workflow(base_url, width=1024, height=1024):
+    """Create a standard API workflow automatically using an installed ComfyUI checkpoint."""
+    base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
+    request=urllib.request.Request(base_url+"/models/checkpoints",headers={"User-Agent":"VideoStudyosu"})
+    try:
+        with urllib.request.urlopen(request,timeout=10) as response:
+            checkpoints=json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError("ComfyUI'ye ulaşılamadı. Önce yerel ComfyUI'yi başlat. Ayrıntı: "+str(exc))
+    if not isinstance(checkpoints,list) or not checkpoints:
+        raise RuntimeError("ComfyUI bağlı ancak yüklü checkpoint modeli bulunamadı. Bir SD 1.5 veya SDXL checkpoint modelini ComfyUI/models/checkpoints klasörüne kur.")
+    checkpoint=checkpoints[0]
+    workflow={
+        "1":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":checkpoint}},
+        "2":{"class_type":"CLIPTextEncode","inputs":{"text":"cinematic photorealistic film still, detailed environment, natural lighting","clip":["1",1]}},
+        "3":{"class_type":"CLIPTextEncode","inputs":{"text":"blurry, low quality, bad anatomy, extra fingers, duplicate people, text, watermark, collage","clip":["1",1]}},
+        "4":{"class_type":"EmptyLatentImage","inputs":{"width":int(width),"height":int(height),"batch_size":1}},
+        "5":{"class_type":"KSampler","inputs":{"seed":int(time.time())%(2**32),"steps":25,"cfg":7.0,"sampler_name":"dpmpp_2m","scheduler":"karras","denoise":1.0,"model":["1",0],"positive":["2",0],"negative":["3",0],"latent_image":["4",0]}},
+        "6":{"class_type":"VAEDecode","inputs":{"samples":["5",0],"vae":["1",2]}},
+        "7":{"class_type":"SaveImage","inputs":{"filename_prefix":"VideoStudyosu/Scene","images":["6",0]}}
+    }
+    target=Path(tempfile.gettempdir())/"video_studyosu_auto_workflow.json"
+    target.write_text(json.dumps(workflow,ensure_ascii=False,indent=2),encoding="utf-8")
+    return str(target),checkpoint
+
+
 def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200, reference_images=None, seed=0):
     """Submit an exported ComfyUI API workflow, wait for its output and save the image locally."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
