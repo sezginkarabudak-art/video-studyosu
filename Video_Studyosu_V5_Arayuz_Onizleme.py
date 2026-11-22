@@ -955,6 +955,7 @@ class VideoStudio:
         ttk.Button(order,text="↑ Yukarı",command=lambda:self.move_scene(-1)).pack(side="left")
         ttk.Button(order,text="↓ Aşağı",command=lambda:self.move_scene(1)).pack(side="left",padx=5)
         ttk.Button(order,text="Görsel seç",command=self.choose_image).pack(side="left",padx=5)
+        ttk.Button(order,text="Varsayılan görsele dön",command=self.reset_scene_image).pack(side="left",padx=5)
         ttk.Button(order,text="Kendi sesimi seç",command=self.choose_audio).pack(side="left")
         ttk.Button(order,text="Görsel oluştur",command=self.generate_visual).pack(side="left",padx=5)
 
@@ -1419,6 +1420,23 @@ class VideoStudio:
         self.project["scenes"][i]["image"]=p
         self.show_preview(i)
         self.set_status("Sahne görseli eklendi ve ön izleme yenilendi.")
+
+    def reset_scene_image(self):
+        i=self.selected_index()
+        if i is None:
+            messagebox.showinfo("Görsel","Önce sıfırlamak istediğin sahneyi seç.")
+            return
+        scene=self.project["scenes"][i]
+        scene["image"]=""
+        try:
+            p=self.preview_path(i)
+            make_original_visual(scene["text"],p,size=(960,540),seed=i,
+                                 request=scene.get("visual_request",""))
+            scene["image"]=str(p)
+            self.show_preview(i)
+            self.set_status("Sahne görseli varsayılan yerel kompozisyona döndürüldü.")
+        except Exception as e:
+            messagebox.showerror("Görsel sıfırlanamadı",str(e))
 
     def choose_audio(self):
         i=self.selected_index()
