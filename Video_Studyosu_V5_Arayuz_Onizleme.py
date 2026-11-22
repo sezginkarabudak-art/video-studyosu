@@ -3,14 +3,14 @@
 Video Studyosu V4 - API'siz görsel kompozisyon + video üretimi
 Not: Görseller, Pillow ile oluşturulan özgün grafik kompozisyonlardır; AI image generation değildir.
 """
-import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile, io
+import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile, io, concurrent.futures
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.8"
-APP_VERSION = "5.6.8"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.9"
+APP_VERSION = "5.6.9"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -212,22 +212,144 @@ def find_comfyui_installation():
     return None
 
 
-def _download_file(url, destination, progress=None, label="Dosya"):
+def _download_file(url, destination, progress=None, label="Dosya", workers=8):
+    """Fast resumable downloader: parallel HTTP ranges with persistent chunks and safe fallback."""
     destination=Path(destination)
     destination.parent.mkdir(parents=True,exist_ok=True)
+    if destination.is_file() and destination.stat().st_size>0:
+        return destination
+    headers={"User-Agent":"VideoStudyosu/5.6.9"}
+    received_lock=threading.Lock()
+    received_total=0
+    started=time.monotonic()
+    last_report=[0.0]
+    def report(delta,total):
+        nonlocal received_total
+        with received_lock:
+            received_total+=delta
+            now=time.monotonic()
+            if progress and (now-last_report[0]>=0.7 or (total and received_total>=total)):
+                elapsed=max(now-started,0.1)
+                speed=received_total/elapsed/1024**2
+                pct=(received_total/total*100) if total else 0
+                remaining=max(total-received_total,0)/max(received_total/elapsed,1) if total else 0
+                progress(f"{label}: {received_total/1024**3:.2f}/{total/1024**3:.2f} GB · %{pct:.0f} · {speed:.1f} MB/sn · kalan {remaining/60:.1f} dk" if total else f"{label}: {received_total/1024**2:.1f} MB · {speed:.1f} MB/sn")
+                last_report[0]=now
+    # Ask the origin whether byte ranges are supported and learn the exact file size.
+    total=0
+    range_supported=False
+    try:
+        req=urllib.request.Request(url,headers={**headers,"Range":"bytes=0-0"})
+        with urllib.request.urlopen(req,timeout=45) as response:
+            content_range=response.headers.get("Content-Range","")
+            match=re.search(r"/(\d+)$",content_range)
+            if response.status==206 and match:
+                total=int(match.group(1)); range_supported=True
+            elif response.status==200:
+                total=int(response.headers.get("Content-Length") or 0)
+    except Exception:
+        pass
+
+    # Parallel ranged mode. Each chunk is persisted separately so interrupted
+    # downloads resume only the missing bytes on the next launch.
+    if range_supported and total>0:
+        count=max(1,min(int(workers),max(1,math.ceil(total/(8*1024**2)))))
+        chunk_size=math.ceil(total/count)
+        parts_dir=destination.with_name(destination.name+".parts")
+        parts_dir.mkdir(parents=True,exist_ok=True)
+        # Discard chunks from a different-sized remote object.
+        meta=parts_dir/"size.txt"
+        if meta.exists() and meta.read_text(encoding="ascii",errors="ignore").strip()!=str(total):
+            shutil.rmtree(parts_dir,ignore_errors=True); parts_dir.mkdir(parents=True,exist_ok=True)
+        meta.write_text(str(total),encoding="ascii")
+        jobs=[]
+        for index in range(count):
+            start=index*chunk_size
+            end=min(total-1,start+chunk_size-1)
+            part=parts_dir/f"{index:03d}.part"
+            expected=end-start+1
+            if part.exists() and part.stat().st_size>expected: part.unlink()
+            if part.exists() and part.stat().st_size==expected:
+                received_total+=expected
+                continue
+            jobs.append((index,start,end,part,expected))
+        if progress:
+            progress(f"{label}: çoklu bağlantı ile indirme başlıyor ({count} bağlantı)")
+        def fetch_part(job):
+            index,start,end,part,expected=job
+            for attempt in range(4):
+                current=part.stat().st_size if part.exists() else 0
+                if current>=expected: return
+                req_headers={**headers,"Range":f"bytes={start+current}-{end}"}
+                try:
+                    req=urllib.request.Request(url,headers=req_headers)
+                    with urllib.request.urlopen(req,timeout=120) as response:
+                        if response.status!=206:
+                            raise RuntimeError("Sunucu parçalı indirmeyi desteklemiyor.")
+                        mode="ab" if current else "wb"
+                        with open(part,mode) as out:
+                            while True:
+                                data=response.read(1024*1024)
+                                if not data: break
+                                out.write(data); report(len(data),total)
+                    if part.stat().st_size!=expected:
+                        raise IOError("İndirilen parça boyutu beklenenden farklı.")
+                    return
+                except Exception:
+                    if attempt==3: raise
+                    time.sleep(1.5*(attempt+1))
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=count) as pool:
+                list(pool.map(fetch_part,jobs))
+            temp=destination.with_suffix(destination.suffix+".assembling")
+            with open(temp,"wb") as out:
+                for index in range(count):
+                    with open(parts_dir/f"{index:03d}.part","rb") as part:
+                        shutil.copyfileobj(part,out,8*1024*1024)
+            if temp.stat().st_size!=total:
+                temp.unlink(missing_ok=True)
+                raise IOError("Birleştirilen indirme dosyasının boyutu doğrulanamadı.")
+            temp.replace(destination)
+            shutil.rmtree(parts_dir,ignore_errors=True)
+            destination.with_suffix(destination.suffix+".part").unlink(missing_ok=True)
+            if progress: progress(f"{label}: indirme tamamlandı · {destination.stat().st_size/1024**3:.2f} GB")
+            return destination
+        except Exception as exc:
+            # If the server advertised ranges but later rejects them, do not
+            # assemble corrupt bytes. Continue using a single resumable stream.
+            if progress: progress(f"{label}: çoklu bağlantı kullanılamadı, devam edilebilir tek bağlantıya geçiliyor ({exc})")
+
+    # Single-stream fallback with HTTP Range resume.
     partial=destination.with_suffix(destination.suffix+".part")
-    request=urllib.request.Request(url,headers={"User-Agent":"VideoStudyosu/5.6.7"})
-    with urllib.request.urlopen(request,timeout=90) as response, open(partial,"wb") as out:
-        total=int(response.headers.get("Content-Length") or 0)
-        received=0
-        while True:
-            chunk=response.read(8*1024*1024)
-            if not chunk: break
-            out.write(chunk); received+=len(chunk)
-            if progress:
-                progress(f"{label}: {received/1024**3:.2f} GB"+(f" / {total/1024**3:.2f} GB" if total else ""))
-    partial.replace(destination)
-    return destination
+    for attempt in range(4):
+        offset=partial.stat().st_size if partial.exists() else 0
+        request_headers=dict(headers)
+        if offset: request_headers["Range"]=f"bytes={offset}-"
+        req=urllib.request.Request(url,headers=request_headers)
+        try:
+            with urllib.request.urlopen(req,timeout=120) as response:
+                if offset and response.status!=206:
+                    partial.unlink(missing_ok=True)
+                    raise IOError("Sunucu kaldığı yerden devamı kabul etmedi; temiz indirme yeniden başlatılacak.")
+                if not offset and response.status not in (200,206):
+                    raise IOError(f"Beklenmeyen HTTP durumu: {response.status}")
+                content_len=int(response.headers.get("Content-Length") or 0)
+                total_bytes=offset+content_len
+                mode="ab" if offset else "wb"
+                with open(partial,mode) as out:
+                    while True:
+                        data=response.read(4*1024*1024)
+                        if not data: break
+                        out.write(data); report(len(data),total_bytes)
+            if total_bytes and partial.stat().st_size!=total_bytes:
+                raise IOError("İndirme eksik kaldı.")
+            partial.replace(destination)
+            return destination
+        except Exception:
+            if attempt==3: raise
+            time.sleep(2*(attempt+1))
+    raise RuntimeError("Dosya indirilemedi: "+str(url))
+
 
 
 def install_visual_engine(progress=None):
