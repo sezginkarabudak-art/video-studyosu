@@ -9,7 +9,21 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 APP_NAME = "Karabudak Film Stüdyoları V5.4.1"
-APP_VERSION = "5.4.2"
+APP_VERSION = "5.4.3"
+ 
+PLATFORM_PROFILES = {
+    "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
+    "YouTube Shorts": {"size": (1080,1920), "ratio": "9:16", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": 180},
+    "Instagram Reels": {"size": (1080,1920), "ratio": "9:16", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": 1200},
+    "Instagram Hikâye": {"size": (1080,1920), "ratio": "9:16", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": 60},
+    "TikTok": {"size": (1080,1920), "ratio": "9:16", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": 3600},
+    "Diğer dikey kısa video": {"size": (1080,1920), "ratio": "9:16", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
+    "Özel format": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
+}
+
+def platform_profile(name):
+    return PLATFORM_PROFILES.get(name, PLATFORM_PROFILES["Özel format"])
+
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -594,7 +608,8 @@ class VideoStudio:
             self.w_script.insert("1.0",d.get("script",self.project.get("script", "")))
             ttk.Button(self.wizard_body,text="Senarist sekmesine git",command=lambda:self._select_tab(4)).pack(anchor="w",pady=6)
         else:
-            summary=f"Platform: {d['platform']}\nKarakter: {d['character']}\nSes: {d['voice']}\nAltyazı: {d['caption']}\n\nSenaryo sahnelere ayrılacak. Sonraki ekranda sahne metinlerini ve görselleri düzenleyip ön izleme yapabileceksin."
+            p=platform_profile(d["platform"])
+            summary=f"Platform: {d['platform']}\nÇözünürlük: {p['size'][0]} × {p['size'][1]} ({p['ratio']})\nKare hızı: {p['fps']} FPS\nDosya: {p['format']}\nKarakter: {d['character']}\nSes: {d['voice']}\nAltyazı: {d['caption']}\n\nVideo seçilen platforma uygun boyutlarda hazırlanacak."
             ttk.Label(self.wizard_body,text=summary,justify="left",font=("Segoe UI",11)).pack(anchor="w",pady=8)
         self.wizard_back_btn.config(state="normal" if self.wizard_step>0 else "disabled")
         self.wizard_next_btn.config(text="Projeyi hazırla ✓" if self.wizard_step==5 else "Devam →")
@@ -617,7 +632,9 @@ class VideoStudio:
         self.project["platform"]=d["platform"]
         self.name_var.set("Yeni "+d["platform"])
         self.script.delete("1.0","end"); self.script.insert("1.0",d.get("script",""))
-        self.ratio.set("16:9" if d["platform"] in ("YouTube yatay video","Özel format") else "9:16")
+        profile=platform_profile(d["platform"])
+        self.ratio.set(profile["ratio"])
+        self.project["export_profile"]=dict(profile)
         self.captions.set(d["caption"]!="Altyazı yok")
         if d["voice"].startswith("Kadın"): self.voice_gender.set("Kadın"); self.filter_voice_choices()
         elif d["voice"].startswith("Erkek"): self.voice_gender.set("Erkek"); self.filter_voice_choices()
@@ -1450,7 +1467,9 @@ class VideoStudio:
             folder.mkdir(parents=True,exist_ok=True)
             assets=folder/"gecici"; assets.mkdir(exist_ok=True)
             ratio=self.project["ratio"]
-            size=(1280,720) if ratio=="16:9" else (720,1280)
+            profile=platform_profile(self.project.get("platform","Özel format"))
+            size=profile["size"]
+            fps=profile["fps"]
             clips=[]
             for idx,scene in enumerate(self.project["scenes"]):
                 self._ui_status(f"{idx+1}/{len(self.project['scenes'])}: Sahne hazırlanıyor...")
@@ -1506,7 +1525,7 @@ class VideoStudio:
                     m=re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)",probe.stderr)
                     dur=(int(m.group(1))*3600+int(m.group(2))*60+float(m.group(3))) if m else max(4,len(scene["text"])/13)
                     frame=str(assets/f"clip_{idx:03d}.mp4")
-                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps=25,format=yuv420p"
+                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},format=yuv420p"
                     run_ffmpeg(["-loop","1","-i",img,"-i",a,"-vf",vf,"-t",str(max(2,dur)),"-r","25","-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p","-c:a","aac","-shortest",frame])
                 else:
                     # Subtitle-only: show each translated scene for a readable fixed duration.
