@@ -39,6 +39,9 @@ jobs:
       - name: Python syntax and import compilation
         run: |
           python -m py_compile Video_Studyosu_V5_Arayuz_Onizleme.py
+      - name: Core character continuity tests
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
       - name: Windows updater smoke tests
         shell: pwsh
         run: |

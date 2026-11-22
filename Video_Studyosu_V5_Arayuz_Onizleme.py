@@ -105,6 +105,46 @@ def build_scene_continuity_prompt(scene, scene_index, scenes):
             "explicitly establishes a change.")
 
 
+def remap_character_scene_links(scenes, deleted_index):
+    """Remove one character and keep legacy and multi-character scene indices aligned."""
+    for scene in scenes:
+        ids=scene.get("character_ids")
+        if isinstance(ids,list):
+            adjusted=[]
+            for cid in ids:
+                if not isinstance(cid,int) or cid==deleted_index:
+                    continue
+                adjusted.append(cid-1 if cid>deleted_index else cid)
+            if adjusted:
+                scene["character_ids"]=adjusted
+                scene["character_id"]=adjusted[0]
+            else:
+                scene.pop("character_ids",None)
+                scene.pop("character_id",None)
+        else:
+            cid=scene.get("character_id")
+            if isinstance(cid,int):
+                if cid==deleted_index: scene.pop("character_id",None)
+                elif cid>deleted_index: scene["character_id"]=cid-1
+
+
+def collect_character_reference_images(scene, characters):
+    """Return existing unique reference image paths for the characters assigned to a scene."""
+    ids=scene.get("character_ids")
+    if not isinstance(ids,list):
+        old_id=scene.get("character_id")
+        ids=[old_id] if isinstance(old_id,int) else []
+    images=[]
+    for char_id in ids:
+        if isinstance(char_id,int) and 0<=char_id<len(characters):
+            character=characters[char_id]
+            paths=[character.get("image","")]+list(character.get("reference_images",[]))
+            for path in paths:
+                if path and Path(path).is_file() and path not in images:
+                    images.append(path)
+    return images
+
+
 def comfyui_upload_reference_image(base_url, image_path):
     """Upload a character reference to ComfyUI input storage and return its server-side name."""
     path=Path(image_path)
@@ -141,8 +181,7 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
     # Update common built-in text, seed, and latent-size nodes without assuming fixed node IDs.
     text_nodes=[]
     negative_nodes=[]
-    reference_images=list(reference_images or [])
-    uploaded_refs=[comfyui_upload_reference_image(base_url,reference) for reference in reference_images]
+    reference_images=[str(p) for p in (reference_images or []) if p and Path(p).is_file()]
     ipadapter_nodes=[]
     for node_id,node in workflow.items():
         if not isinstance(node,dict): continue
@@ -162,11 +201,13 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
             if "width" in inputs: inputs["width"]=int(width)
             if "height" in inputs: inputs["height"]=int(height)
     # Attach uploaded references to actual IPAdapter image inputs, not merely to unused LoadImage nodes.
-    if uploaded_refs:
+    if reference_images:
         if not ipadapter_nodes:
             raise ValueError("Bu ComfyUI iş akışında IPAdapter görüntü uygulama düğümü bulunamadı. IPAdapter Unified Loader sonrasına IPAdapter Advanced (veya IPAdapter) düğümü ekle; image girişini bu düğümde açık bırak.")
-        if len(uploaded_refs)>len(ipadapter_nodes):
-            raise ValueError(f"{len(uploaded_refs)} karakter referansı seçildi ancak iş akışında yalnızca {len(ipadapter_nodes)} IPAdapter görüntü düğümü var. Her karakter için ayrı IPAdapter düğümü ekle.")
+        if len(reference_images)>len(ipadapter_nodes):
+            raise ValueError(f"{len(reference_images)} karakter referansı seçildi ancak iş akışında yalnızca {len(ipadapter_nodes)} IPAdapter görüntü düğümü var. Her referans için ayrı IPAdapter düğümü ekle.")
+        # Validate workflow capacity before uploading files to ComfyUI.
+        uploaded_refs=[comfyui_upload_reference_image(base_url,reference) for reference in reference_images]
         next_id=max([int(k) for k in workflow if str(k).isdigit()] or [0])+1
         for (adapter_id,adapter_inputs),image_name in zip(ipadapter_nodes,uploaded_refs):
             load_id=str(next_id); next_id+=1
@@ -876,7 +917,7 @@ class VideoStudio:
         self.update_tab=ttk.Frame(nb,padding=24); nb.add(self.update_tab,text="Güncelleme")
         self.home_tab=tk.Frame(nb,bg="#101216"); nb.insert(0,self.home_tab,text="Ana Sayfa")
         self.old_edit_tab=ttk.Frame(nb,padding=18); nb.add(self.old_edit_tab,text="Eski Videoyu Düzenle")
-        nav=[("⌂","Ana Sayfa",0),("🎬","Video Oluştur",1),("♟","Karakter Stüdyosu",3),("▤","Senaryo Yazarı",4),("▣","Sahne Düzenleyici",1),("▱","Proje Yönetimi",2),("▶","Video Arşivi",2),("▣","Araçlar",6),("⚙","Ayarlar",5),("⟳","Güncelleme",5),("ⓘ","Hakkında",5)]
+        nav=[("⌂","Ana Sayfa",0),("🎬","Video Oluştur",1),("♟","Karakter Stüdyosu",3),("▤","Senaryo Yazarı",4),("▣","Sahne Düzenleyici",1),("▱","Video Projeleri / Arşiv",2),("▶","Video Kütüphanesi",2),("✂","Eski Videoyu Düzenle",6),("⟳","Güncelleme",5)]
         self.nav_buttons=[]
         for icon,label,index in nav:
             b=tk.Button(side,text=f"  {icon}    {label}",anchor="w",font=("Segoe UI",12),bg="#15181d",fg="#f2f0ee",activebackground="#6e1714",activeforeground="white",relief="flat",bd=0,padx=10,pady=11,command=lambda i=index:self._select_tab(i))
@@ -1654,9 +1695,21 @@ class VideoStudio:
     def delete_character(self):
         sel=self.character_list.curselection()
         if not sel:return
-        del self.project["characters"][sel[0]]
-        for scene in self.project.get("scenes",[]): scene.pop("character_id",None)
-        self.refresh_characters(); self.character_name.set(""); self.character_desc.delete("1.0","end")
+        deleted=sel[0]
+        del self.project["characters"][deleted]
+        # Keep every scene's character links aligned with the shifted character list.
+        remap_character_scene_links(self.project.get("scenes",[]),deleted)
+        self.character_image=""
+        self.character_reference_images=[]
+        self.character_list.selection_clear(0,"end")
+        self.character_name.set("")
+        self.character_desc.delete("1.0","end")
+        self.character_wardrobe.delete("1.0","end")
+        self.character_image_label.config(text="Referans fotoğrafı seçilmedi")
+        self.refresh_character_references_label()
+        self.refresh_character_preview()
+        self.refresh_characters()
+        self.set_status("Karakter silindi; sahne bağlantıları yeniden düzenlendi.")
 
     def assign_character(self):
         cs=list(self.character_list.curselection()); ss=self.character_scene_combo.current()
@@ -1935,19 +1988,7 @@ class VideoStudio:
         prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
-        character_images=[]
-        character_list=self.project.get("characters",[])
-        char_ids=scene.get("character_ids")
-        if not isinstance(char_ids,list):
-            old_id=scene.get("character_id")
-            char_ids=[old_id] if isinstance(old_id,int) else []
-        for char_id in char_ids:
-            if isinstance(char_id,int) and 0<=char_id<len(character_list):
-                char=character_list[char_id]
-                image_paths=[char.get("image","")]+list(char.get("reference_images",[]))
-                for image_path in image_paths:
-                    if image_path and Path(image_path).is_file() and image_path not in character_images:
-                        character_images.append(image_path)
+        character_images=collect_character_reference_images(scene,self.project.get("characters",[]))
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
         self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
@@ -2159,6 +2200,10 @@ class VideoStudio:
         self.project["rate"]=int(self.rate.get())
         self.project["voice_volume"]=int(self.voice_vol.get())
         self.project["music_volume"]=int(self.music_vol.get())
+        # Read Tk variables on the UI thread; the render worker uses plain values only.
+        voice_rate,voice_pitch=self.effective_voice_controls()
+        self.project["render_voice_rate"]=voice_rate
+        self.project["render_voice_pitch"]=voice_pitch
         self.project["output_mode"]=choices["mode"]
         self.project["subtitle_language"]=choices.get("language")
         self.busy=True; self.progress.start(10); self.set_status("Video hazırlanıyor...")
@@ -2217,7 +2262,8 @@ class VideoStudio:
                         run_ffmpeg(["-i",audio,"-vn","-ac","2","-ar","44100",a])
                     else:
                         a=str(assets/f"ses_{idx:03d}.mp3")
-                        rate,pitch=self.effective_voice_controls()
+                        rate=int(self.project.get("render_voice_rate",self.project.get("rate",0)))
+                        pitch=int(self.project.get("render_voice_pitch",0))
                         rate_str=f"{rate:+d}%"
                         pitch_str=f"{pitch:+d}Hz"
                         import edge_tts
