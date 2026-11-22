@@ -42,7 +42,7 @@ jobs:
         id: package
         shell: pwsh
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item 'dist/Video Studyosu/Video Studyosu.exe' 'dist/Video Studyosu.exe'
           Compress-Archive -Force -Path 'dist/Video Studyosu.exe','dist/Video Studyosu','update_install.bat','INSTALL.bat' -DestinationPath 'VideoStudyosu_Update.zip'
@@ -87,7 +87,7 @@ jobs:
             }
             if ($changed.Count -eq 0) { throw "Değişen dosya bulunamadı; yama oluşturulmadı." }
             $fromVersion = $previousTag.TrimStart('v')
-            $manifest = [pscustomobject]@{ from_version=$fromVersion; to_version='\${{ steps.version.outputs.version }}'; files=$changed }
+            $manifest = [pscustomobject]@{ from_version=$fromVersion; to_version='${{ steps.version.outputs.version }}'; files=$changed }
             $manifestJson = $manifest | ConvertTo-Json -Depth 8
             [System.IO.File]::WriteAllText((Join-Path $patchRoot 'manifest.json'), $manifestJson, (New-Object System.Text.UTF8Encoding($false)))
             Copy-Item 'update_install.bat' $patchRoot
@@ -104,9 +104,9 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v\${{ steps.version.outputs.version }}
-          name: Video Studyosu v\${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Video Studyosu v${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
             VideoStudyosu_Update.zip
-            \${{ steps.package.outputs.patch_name }}
+            ${{ steps.package.outputs.patch_name }}
