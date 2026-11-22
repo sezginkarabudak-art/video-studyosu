@@ -690,8 +690,7 @@ class VideoStudio:
                 names = zf.namelist()
                 if "Video Studyosu.exe" not in names or "update_install.bat" not in names:
                     raise RuntimeError("Güncelleme paketi eksik veya hatalı.")
-                zf.extract("Video Studyosu.exe", work)
-                zf.extract("update_install.bat", work)
+                zf.extractall(work)
             bat = work / "update_install.bat"
             exe = work / "Video Studyosu.exe"
             if getattr(sys, "frozen", False):
