@@ -192,9 +192,20 @@ def palette_for(text):
 def interpret_scene_request(text, request=""):
     """API'siz yerel sahne asistanı: değişiklik isteğini görsel kurallara dönüştürür."""
     r = (request or "").lower()
+    scene = (text or "").lower()
+    combined = scene + " " + r
     notes = []
     style = {"dark": 0, "fog": 0, "rain": 0, "warm": 0, "red": 0, "moon": 0,
-             "silhouette": 0, "stars": 0, "bright": 0}
+             "silhouette": 0, "stars": 0, "bright": 0, "snow": 0,
+             "lightning": 0, "fire": 0, "sunset": 0}
+    if any(k in combined for k in ["kar yağıyor", "kar yağışı", "karlı", "kar fırtınası", "tipi", "snow"]):
+        style["snow"] = 1; notes.append("kar yağışı")
+    if any(k in combined for k in ["şimşek", "yıldırım", "fırtına", "storm"]):
+        style["lightning"] = 1; notes.append("şimşek efekti")
+    if any(k in combined for k in ["alev", "yangın", "yanıyor", "kamp ateşi", "fire"]):
+        style["fire"] = 1; notes.append("ateş ışığı")
+    if any(k in combined for k in ["gün batımı", "gün doğumu", "şafak", "sunset", "sunrise"]):
+        style["sunset"] = 1; notes.append("gün doğumu/batımı renkleri")
     if any(k in r for k in ["daha karanlık", "karanlık yap", "gece olsun", "ışığı azalt"]):
         style["dark"] += 1; notes.append("karanlık artırıldı")
     if any(k in r for k in ["sis", "pus", "duman"]):
@@ -214,8 +225,11 @@ def interpret_scene_request(text, request=""):
     if any(k in r for k in ["aydınlık", "gündüz", "daha açık", "ışığı artır"]):
         style["bright"] += 1; notes.append("aydınlık artırıldı")
     # Mekânı değiştirme isteği için metin + istek birlikte sınıflandırılır.
-    combined = text + " " + request
     c1,c2,kind = palette_for(combined)
+    if style["sunset"]:
+        c1,c2=(42,30,65),(205,91,53)
+    if style["fire"]:
+        c2=(190,70,24)
     return c1,c2,kind,style,notes
 
 def draw_scene_subjects(draw, text, w, h, kind, seed):
@@ -317,7 +331,7 @@ def draw_scene_subjects(draw, text, w, h, kind, seed):
 def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_text=True):
     """API'siz, Pillow tabanlı özgün atmosferik grafik kompozisyonu."""
     w,h=size
-    random.seed(seed + sum(ord(c) for c in (text + request)[:120]))
+    rng = random.Random(seed + sum(ord(c) for c in (text + request)[:120]))
     c1,c2,kind,style,notes = interpret_scene_request(text, request)
     if style["red"]:
         c2=(105,28,36)
@@ -345,9 +359,9 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     d = ImageDraw.Draw(im, "RGBA")
     # Atmospheric particles / stars
     for _ in range(170):
-        x,y = random.randrange(w), random.randrange(h)
-        r = random.choice([1,1,2,3])
-        alpha = random.randint(20,100)
+        x,y = rng.randrange(w), random.randrange(h)
+        r = rng.choice([1,1,2,3])
+        alpha = rng.randint(20,100)
         d.ellipse((x-r,y-r,x+r,y+r), fill=(220,220,210,alpha))
     # Horizon and silhouettes
     horizon = int(h*.73)
@@ -403,6 +417,20 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
             od.line((x,y,x-12,y+32),fill=(180,205,220,90),width=2)
     if style["red"]:
         od.rectangle((0,0,w,h),fill=(100,0,10,18))
+    if style["snow"]:
+        for _ in range(max(90, int(w*h/9000))):
+            x=rng.randrange(w); y=rng.randrange(h); r=rng.choice([1,1,2,3])
+            od.ellipse((x-r,y-r,x+r,y+r),fill=(238,244,250,rng.randint(100,220)))
+    if style["lightning"]:
+        bolt=[(int(w*.72),0),(int(w*.63),int(h*.19)),(int(w*.70),int(h*.19)),
+              (int(w*.57),int(h*.43)),(int(w*.68),int(h*.27)),(int(w*.62),int(h*.27))]
+        od.line(bolt,fill=(225,232,255,220),width=max(3,int(min(w,h)*.009)),joint="curve")
+        od.line(bolt,fill=(185,205,255,100),width=max(9,int(min(w,h)*.025)),joint="curve")
+    if style["fire"]:
+        glow_fire=Image.new("RGBA",(w,h),(0,0,0,0)); fire_draw=ImageDraw.Draw(glow_fire)
+        fire_draw.ellipse((int(w*.58),int(h*.48),int(w*1.08),int(h*1.08)),fill=(255,105,20,105))
+        glow_fire=glow_fire.filter(ImageFilter.GaussianBlur(max(20,int(min(w,h)*.09))))
+        overlay=Image.alpha_composite(overlay,glow_fire)
     im=Image.alpha_composite(im.convert("RGBA"),overlay).convert("RGB")
     # Her sahneye metin tabanli ayri on plan kompozisyonu ekle.
     draw_scene_subjects(ImageDraw.Draw(im, "RGBA"), text + " " + request, w, h, kind, seed)
