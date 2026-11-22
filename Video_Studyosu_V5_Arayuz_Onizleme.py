@@ -9,8 +9,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.7.0"
-APP_VERSION = "5.7.0"
+APP_NAME = "Karabudak Film Stüdyoları V5.7.1"
+APP_VERSION = "5.7.1"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -364,23 +364,52 @@ def install_visual_engine(progress=None):
         raise RuntimeError("Görsel motorunun ilk kurulumu için en az 18 GB boş disk alanı gerekiyor. Kurulum başlamadı.")
     root.mkdir(parents=True,exist_ok=True)
     archive=root/"ComfyUI_windows_portable_nvidia.7z"
-    extractor=root/"7zr.exe"
+    extractor=root/"7za.exe"
     if not extractor.is_file():
-        if progress: progress("Görsel motoru kuruluyor: arşiv açıcı indiriliyor")
-        _download_file("https://www.7-zip.org/a/7zr.exe",extractor,progress,"Kurulum aracı")
+        if progress: progress("Görsel motoru kuruluyor: tam 7-Zip arşiv açıcı indiriliyor")
+        _download_file("https://www.7-zip.org/a/7za.exe",extractor,progress,"7-Zip kurulum aracı")
     if not archive.is_file() or archive.stat().st_size<100_000_000:
         if progress: progress("Resmî ComfyUI çalışma ortamı indiriliyor")
         _download_file("https://github.com/comfyanonymous/ComfyUI/releases/latest/download/ComfyUI_windows_portable_nvidia.7z",archive,progress,"ComfyUI")
-    if progress: progress("Görsel motoru dosyaları açılıyor")
-    result=subprocess.run([str(extractor),"x",str(archive),"-o"+str(root),"-y"],capture_output=True,text=True,timeout=1800)
+    creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0) if os.name=="nt" else 0
+    startupinfo=None
+    if os.name=="nt":
+        startupinfo=subprocess.STARTUPINFO()
+        startupinfo.dwFlags|=subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow=0
+    if progress: progress("ComfyUI arşivi doğrulanıyor")
+    test=subprocess.run([str(extractor),"t",str(archive)],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=900,creationflags=creationflags,startupinfo=startupinfo)
+    if test.returncode:
+        detail=(test.stdout or "")+"\\n"+(test.stderr or "")
+        raise RuntimeError("ComfyUI arşiv doğrulaması başarısız. İndirme bozuk veya eksik olabilir: "+detail[-1800:])
+    # Extract into a clean staging folder. A failed extraction must never be
+    # mistaken for a complete install on the next startup.
+    staging=root/"_ComfyUI_extracting"
+    if staging.exists(): shutil.rmtree(staging,ignore_errors=True)
+    staging.mkdir(parents=True,exist_ok=True)
+    if progress: progress("ComfyUI dosyaları açılıyor (komut penceresi gösterilmez)")
+    result=subprocess.run([str(extractor),"x",str(archive),"-o"+str(staging),"-y"],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=2400,creationflags=creationflags,startupinfo=startupinfo)
     if result.returncode:
-        raise RuntimeError("ComfyUI paketi açılamadı: "+(result.stderr or result.stdout)[-1200:])
-    candidates=list(root.glob("**/main.py"))
-    candidates=[p.parent for p in candidates if p.parent.name.lower()=="comfyui"]
-    if not candidates:
-        raise RuntimeError("İndirilen ComfyUI paketinde ana motor dosyası bulunamadı.")
-    found=candidates[0]
-    py_candidates=[found.parent/"python_embeded"/"python.exe",root/"python_embeded"/"python.exe"]
+        detail=(result.stdout or "")+"\\n"+(result.stderr or "")
+        shutil.rmtree(staging,ignore_errors=True)
+        raise RuntimeError("ComfyUI paketi açılamadı (7-Zip çıkış kodu "+str(result.returncode)+"): "+detail[-2200:])
+    candidates=[p.parent for p in staging.glob("**/main.py") if p.parent.name.lower()=="comfyui"]
+    found=None
+    for candidate in candidates:
+        portable_root=candidate.parent
+        if (portable_root/"python_embeded"/"python.exe").is_file():
+            found=candidate
+            break
+    if found is None:
+        shutil.rmtree(staging,ignore_errors=True)
+        raise RuntimeError("Arşiv açıldı ancak beklenen ComfyUI\\main.py ve python_embeded\\python.exe birlikte bulunamadı. Kurulum dosyaları eksik.")
+    final_root=found.parent
+    target_root=root/"ComfyUI_windows_portable"
+    if target_root.exists(): shutil.rmtree(target_root,ignore_errors=True)
+    shutil.move(str(final_root),str(target_root))
+    shutil.rmtree(staging,ignore_errors=True)
+    found=target_root/"ComfyUI"
+    py_candidates=[target_root/"python_embeded"/"python.exe"]
     py=next((p for p in py_candidates if p.is_file()),None)
     if py is None:
         raise RuntimeError("ComfyUI Python çalışma ortamı pakette bulunamadı.")
