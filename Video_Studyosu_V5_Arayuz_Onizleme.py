@@ -3,14 +3,14 @@
 Video Studyosu V4 - API'siz görsel kompozisyon + video üretimi
 Not: Görseller, Pillow ile oluşturulan özgün grafik kompozisyonlardır; AI image generation değildir.
 """
-import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile
+import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile, io
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.6"
-APP_VERSION = "5.6.6"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.7"
+APP_VERSION = "5.6.7"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -198,63 +198,151 @@ def visual_generation_dimensions(width, height, is_sdxl=True):
 
 
 def find_comfyui_installation():
-    """Locate an existing local ComfyUI installation without asking the user for a path."""
-    candidates=[]
+    """Find the private Video Studyosu-managed engine or a compatible local ComfyUI."""
+    managed=HOME/"AppData"/"Local"/"VideoStudyosu"/"AIEngine"
+    candidates=[managed/"ComfyUI",managed]
     env_path=os.environ.get("VIDEO_STUDYOSU_COMFYUI")
     if env_path: candidates.append(Path(env_path).expanduser())
-    candidates.extend([
-        HOME/"ComfyUI", HOME/"comfyui", HOME/"Desktop"/"ComfyUI",
-        HOME/"Documents"/"ComfyUI", HOME/"Videos"/"ComfyUI",
-        Path(sys.executable).resolve().parent/"ComfyUI"
-    ])
+    candidates.extend([HOME/"ComfyUI",HOME/"comfyui",HOME/"Desktop"/"ComfyUI",HOME/"Documents"/"ComfyUI"])
     for root in candidates:
         if (root/"main.py").is_file():
             return root
+        nested=list(root.glob("**/ComfyUI/main.py")) if root.is_dir() and root==managed else []
+        if nested: return nested[0].parent
     return None
 
 
-def ensure_comfyui_running(base_url="http://127.0.0.1:8188", startup_timeout=90):
-    """Start an already-installed ComfyUI automatically and wait for its local API."""
+def _download_file(url, destination, progress=None, label="Dosya"):
+    destination=Path(destination)
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    partial=destination.with_suffix(destination.suffix+".part")
+    request=urllib.request.Request(url,headers={"User-Agent":"VideoStudyosu/5.6.7"})
+    with urllib.request.urlopen(request,timeout=90) as response, open(partial,"wb") as out:
+        total=int(response.headers.get("Content-Length") or 0)
+        received=0
+        while True:
+            chunk=response.read(8*1024*1024)
+            if not chunk: break
+            out.write(chunk); received+=len(chunk)
+            if progress:
+                progress(f"{label}: {received/1024**3:.2f} GB"+(f" / {total/1024**3:.2f} GB" if total else ""))
+    partial.replace(destination)
+    return destination
+
+
+def install_visual_engine(progress=None):
+    """Install official ComfyUI portable runtime and a verified photorealistic SDXL checkpoint."""
+    if os.name!="nt":
+        raise RuntimeError("Otomatik görsel motoru kurulumu şu anda Windows içindir.")
+    root=HOME/"AppData"/"Local"/"VideoStudyosu"/"AIEngine"
+    comfy=root/"ComfyUI"
+    drive=Path(root.anchor)
+    free=shutil.disk_usage(drive).free
+    if free < 18*1024**3:
+        raise RuntimeError("Görsel motorunun ilk kurulumu için en az 18 GB boş disk alanı gerekiyor. Kurulum başlamadı.")
+    root.mkdir(parents=True,exist_ok=True)
+    archive=root/"ComfyUI_windows_portable_nvidia.7z"
+    extractor=root/"7zr.exe"
+    if not extractor.is_file():
+        if progress: progress("Görsel motoru kuruluyor: arşiv açıcı indiriliyor")
+        _download_file("https://www.7-zip.org/a/7zr.exe",extractor,progress,"Kurulum aracı")
+    if not archive.is_file() or archive.stat().st_size<100_000_000:
+        if progress: progress("Resmî ComfyUI çalışma ortamı indiriliyor")
+        _download_file("https://github.com/comfyanonymous/ComfyUI/releases/latest/download/ComfyUI_windows_portable_nvidia.7z",archive,progress,"ComfyUI")
+    if progress: progress("Görsel motoru dosyaları açılıyor")
+    result=subprocess.run([str(extractor),"x",str(archive),"-o"+str(root),"-y"],capture_output=True,text=True,timeout=1800)
+    if result.returncode:
+        raise RuntimeError("ComfyUI paketi açılamadı: "+(result.stderr or result.stdout)[-1200:])
+    candidates=list(root.glob("**/main.py"))
+    candidates=[p.parent for p in candidates if p.parent.name.lower()=="comfyui"]
+    if not candidates:
+        raise RuntimeError("İndirilen ComfyUI paketinde ana motor dosyası bulunamadı.")
+    found=candidates[0]
+    py_candidates=[found.parent/"python_embeded"/"python.exe",root/"python_embeded"/"python.exe"]
+    py=next((p for p in py_candidates if p.is_file()),None)
+    if py is None:
+        raise RuntimeError("ComfyUI Python çalışma ortamı pakette bulunamadı.")
+    model=found/"models"/"checkpoints"/"RealVisXL_V5.0_fp16.safetensors"
+    if not model.is_file() or model.stat().st_size<6_000_000_000:
+        if progress: progress("Fotogerçekçi RealVisXL modeli indiriliyor (yaklaşık 6,94 GB)")
+        _download_file(
+            "https://huggingface.co/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors",
+            model,progress,"RealVisXL modeli"
+        )
+    digest=hashlib.sha256()
+    with open(model,"rb") as stream:
+        for chunk in iter(lambda:stream.read(8*1024*1024),b""): digest.update(chunk)
+    if digest.hexdigest().lower()!="6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80":
+        model.unlink(missing_ok=True)
+        raise RuntimeError("İndirilen görsel modelinin SHA256 doğrulaması başarısız. Güvenlik için dosya silindi.")
+    if progress: progress("Gerçekçi görsel modeli doğrulandı; motor hazır")
+    return found
+
+
+def ensure_visual_models_and_reference_support(install, progress=None):
+    """Install the realistic SDXL checkpoint and IPAdapter Plus reference stack automatically."""
+    install=Path(install)
+    models=install/"models"
+    checkpoint=models/"checkpoints"/"RealVisXL_V5.0_fp16.safetensors"
+    checkpoint.parent.mkdir(parents=True,exist_ok=True)
+    if not checkpoint.is_file() or checkpoint.stat().st_size<6_000_000_000:
+        if progress: progress("Fotogerçekçi RealVisXL modeli indiriliyor (6,94 GB)")
+        _download_file("https://huggingface.co/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors",checkpoint,progress,"RealVisXL")
+    digest=hashlib.sha256()
+    with open(checkpoint,"rb") as stream:
+        for chunk in iter(lambda:stream.read(8*1024*1024),b""): digest.update(chunk)
+    if digest.hexdigest().lower()!="6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80":
+        checkpoint.unlink(missing_ok=True)
+        raise RuntimeError("RealVisXL model SHA256 doğrulaması başarısız; dosya güvenlik için silindi.")
+    nodes=install/"custom_nodes"
+    nodes.mkdir(parents=True,exist_ok=True)
+    node=nodes/"ComfyUI_IPAdapter_plus"
+    if not (node/"__init__.py").is_file():
+        if progress: progress("Karakter referans sistemi kuruluyor")
+        data=urllib.request.urlopen("https://codeload.github.com/cubiq/ComfyUI_IPAdapter_plus/zip/refs/heads/main",timeout=60).read()
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            archive.extractall(nodes)
+        extracted=nodes/"ComfyUI_IPAdapter_plus-main"
+        if extracted.exists(): extracted.rename(node)
+    clip=models/"clip_vision"/"CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+    adapter=models/"ipadapter"/"ip-adapter-plus_sdxl_vit-h.safetensors"
+    if not clip.is_file() or clip.stat().st_size<100_000_000:
+        if progress: progress("Karakter tanıma modeli indiriliyor")
+        _download_file("https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",clip,progress,"CLIP Vision")
+    if not adapter.is_file() or adapter.stat().st_size<100_000_000:
+        if progress: progress("Karakter referans ağırlıkları indiriliyor")
+        _download_file("https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",adapter,progress,"IPAdapter Plus")
+    return checkpoint
+
+
+def ensure_comfyui_running(base_url="http://127.0.0.1:8188", startup_timeout=240, progress=None):
+    """Install if absent, start the local engine and wait for its API."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
     try:
         with urllib.request.urlopen(base_url+"/system_stats",timeout=2):
+            # The engine is already running. Avoid replacing files underneath a live process.
             return True
-    except Exception:
-        pass
+    except Exception: pass
     install=find_comfyui_installation()
     if install is None:
-        raise RuntimeError(
-            "Bu bilgisayarda ComfyUI kurulumu bulunamadı. Program artık ComfyUI'yi kendisi başlatmayı deniyor; "
-            "ancak ilk kurulum için uyumlu AI çalışma ortamı ve büyük görsel model dosyaları gerekiyor. "
-            "Bunlar henüz bu bilgisayarda yok. ComfyUI klasörü kurulduğunda otomatik algılanıp başlatılacak."
-        )
-    python_candidates=[
-        install/"python_embeded"/"python.exe",
-        install/"venv"/"Scripts"/"python.exe",
-        install/".venv"/"Scripts"/"python.exe"
-    ]
-    python_exe=next((p for p in python_candidates if p.is_file()),None)
-    if python_exe is None:
-        python_exe=Path(shutil.which("python") or shutil.which("python3") or "")
-    if not str(python_exe) or not python_exe.is_file():
-        raise RuntimeError("ComfyUI klasörü bulundu ancak çalıştırabileceği Python ortamı bulunamadı.")
+        install=install_visual_engine(progress)
+    ensure_visual_models_and_reference_support(install,progress)
+    py_candidates=[install.parent/"python_embeded"/"python.exe",install/"python_embeded"/"python.exe"]
+    py=next((p for p in py_candidates if p.is_file()),None)
+    if py is None: raise RuntimeError("Görsel motorunun Python çalışma ortamı bulunamadı.")
+    if progress: progress("Yerel görsel motoru başlatılıyor")
+    launch_args=[str(py),str(install/"main.py"),"--listen","127.0.0.1","--port","8188"]
+    if not shutil.which("nvidia-smi"): launch_args.append("--cpu")
     creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0) if os.name=="nt" else 0
-    subprocess.Popen(
-        [str(python_exe),str(install/"main.py"),"--listen","127.0.0.1","--port","8188"],
-        cwd=str(install),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,creationflags=creationflags,
-        start_new_session=(os.name!="nt")
-    )
-    deadline=time.time()+int(startup_timeout)
-    last_error=None
+    subprocess.Popen(launch_args,cwd=str(install),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                     stdin=subprocess.DEVNULL,creationflags=creationflags,start_new_session=(os.name!="nt"))
+    deadline=time.time()+int(startup_timeout); last_error=None
     while time.time()<deadline:
-        time.sleep(2)
+        time.sleep(3)
         try:
-            with urllib.request.urlopen(base_url+"/system_stats",timeout=3):
-                return True
-        except Exception as exc:
-            last_error=exc
-    raise RuntimeError("ComfyUI bulundu ancak otomatik başlatma zaman aşımına uğradı: "+str(last_error))
+            with urllib.request.urlopen(base_url+"/system_stats",timeout=4): return True
+        except Exception as exc: last_error=exc
+    raise RuntimeError("Görsel motoru başlatıldı ancak API zamanında hazır olmadı: "+str(last_error))
 
 
 def create_default_comfyui_workflow(base_url, width=1024, height=1024):
@@ -2143,30 +2231,12 @@ class VideoStudio:
         if i is None:
             messagebox.showinfo("Sahne seç","Önce görsel üretilecek sahneyi seç.")
             return
-        workflow=""
-        automatic_workflow=True
-        base_url="http://127.0.0.1:8188"
-        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
-        if automatic_workflow:
-            try:
-                ensure_comfyui_running(base_url)
-                ensure_comfyui_running(base_url)
-                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
-                self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
-            except Exception as exc:
-                messagebox.showerror("Görsel motoru hazır değil",str(exc))
-                self.comfy_status.config(text="Görsel motoru hazır değil: "+str(exc))
-                return
-        elif not Path(workflow).is_file():
-            messagebox.showerror("İş akışı bulunamadı","Seçilen JSON dosyası artık bulunamıyor. Otomatik mod için dosya seçimini temizle.")
-            return
-        if getattr(self,"comfy_busy",False):
-            messagebox.showinfo("İşlem sürüyor","ComfyUI görsel üretimi zaten devam ediyor.")
-            return
+        if getattr(self,"comfy_busy",False): return
         self.apply_scene_text()
-        scene=self.project["scenes"][i]
+        scene=dict(self.project["scenes"][i])
+        characters=list(self.project.get("characters",[]))
         request=scene.get("visual_request","")
-        character_cues=build_character_consistency_prompt(scene,self.project.get("characters",[]))
+        character_cues=build_character_consistency_prompt(scene,characters)
         continuity_cues=build_scene_continuity_prompt(scene,i,self.project.get("scenes",[]))
         camera_cues=("Camera framing: "+next((label for keys,label in [
             (("yakın plan","yakın çekim","close-up","close up"),"close-up shot"),
@@ -2174,19 +2244,24 @@ class VideoStudio:
             (("tepeden çekim","üst açı","kuş bakışı","top-down"),"high-angle overhead shot"),
             (("alttan çekim","alt açı","low angle"),"low-angle shot")
         ] if any(k in request.lower() for k in keys)),"cinematic eye-level framing")+". ")
-        prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
+        prompt_text=("Photorealistic live-action cinematic film still, real actors, natural skin texture, "
+                     "physically accurate lighting and detailed production design. "+camera_cues+
+                     scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
-        character_images=collect_character_reference_images(scene,self.project.get("characters",[]))
-        if character_images and automatic_workflow:
-            self.comfy_status.config(text="Karakter fotoğrafları referans olarak bağlanıyor; IPAdapter Plus kurulumu gerekli.")
+        character_images=collect_character_reference_images(scene,characters)
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
-        self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
-        self.set_status("Gerçek AI görseli ComfyUI ile üretiliyor...")
+        self.comfy_status.config(text="Görsel motoru otomatik hazırlanıyor...")
+        self.set_status("Görsel motoru hazırlanıyor; ilk kurulumda büyük dosyalar indirilebilir.")
         def worker():
             try:
-                result=comfyui_generate_image(base_url,workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
+                def progress(message):
+                    self.root.after(0,lambda m=message:self.comfy_status.config(text=m))
+                ensure_comfyui_running("http://127.0.0.1:8188",progress=progress)
+                workflow,checkpoint=create_default_comfyui_workflow("http://127.0.0.1:8188",width,height)
+                progress("Sahne görseli üretiliyor: "+Path(checkpoint).name)
+                result=comfyui_generate_image("http://127.0.0.1:8188",workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
                 self.root.after(0,lambda:self._comfy_visual_done(i,result,None))
             except Exception as exc:
                 message=str(exc)
@@ -2194,52 +2269,39 @@ class VideoStudio:
         threading.Thread(target=worker,daemon=True).start()
 
     def generate_all_comfy_visuals(self):
-        """Generate a real ComfyUI image for every scene, sequentially, without silent fallback."""
-        workflow=""
+        """Automatically install, configure and run the local visual engine for every scene."""
         if not self.project.get("scenes"):
             messagebox.showinfo("Sahne yok","Önce metni sahnelere ayır.")
             return
-        automatic_workflow=True
-        base_url="http://127.0.0.1:8188"
-        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
-        if automatic_workflow:
-            try:
-                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
-                self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
-            except Exception as exc:
-                messagebox.showerror("Görsel motoru hazır değil",str(exc))
-                self.comfy_status.config(text="Görsel motoru hazır değil: "+str(exc))
-                return
-        elif not Path(workflow).is_file():
-            messagebox.showerror("İş akışı bulunamadı","Seçilen JSON dosyası bulunamadı. Otomatik mod için dosya seçimini temizle.")
-            return
-        if getattr(self,"comfy_busy",False):
-            messagebox.showinfo("İşlem sürüyor","ComfyUI üretimi zaten devam ediyor.")
-            return
+        if getattr(self,"comfy_busy",False): return
         self.apply_scene_text_if_needed()
         scenes=[dict(scene) for scene in self.project["scenes"]]
         characters=list(self.project.get("characters",[]))
-        base_url="http://127.0.0.1:8188"
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
         self.comfy_busy=True
-        self.comfy_status.config(text=f"AI üretimi başladı: 0/{len(scenes)} sahne")
-        self.set_status("Gerçek AI sahne görselleri sırayla üretiliyor; işlem sürebilir...")
+        self.comfy_status.config(text="Görsel motoru otomatik hazırlanıyor...")
+        self.set_status("Görsel motoru hazırlanıyor; ilk kurulumda büyük dosyalar indirilebilir.")
         def worker():
             results=[]
             try:
+                def progress(message):
+                    self.root.after(0,lambda m=message:self.comfy_status.config(text=m))
+                ensure_comfyui_running("http://127.0.0.1:8188",progress=progress)
+                workflow,checkpoint=create_default_comfyui_workflow("http://127.0.0.1:8188",width,height)
                 for index,scene in enumerate(scenes):
                     request=scene.get("visual_request","")
                     character_cues=build_character_consistency_prompt(scene,characters)
                     continuity_cues=build_scene_continuity_prompt(scene,index,scenes)
                     camera_cues=("Cinematic camera framing. "+request+" ") if request else "Cinematic eye-level camera framing. "
-                    prompt=("Create a single coherent photorealistic cinematic film still. "
-                            "Show the exact action, people, objects and location described in this scene. "
-                            "Do not use abstract shapes, text, captions, collages or graphic placeholders. "
+                    prompt=("Create a single photorealistic live-action feature-film frame with real actors, "
+                            "natural skin texture, physically plausible anatomy, realistic lighting and production design. "
+                            "Show the exact action and location described; no illustration, cartoon, graphic placeholder or text. "
                             +camera_cues+scene.get("text","")+" "+character_cues+" "+continuity_cues).strip()
                     seed=int(hashlib.sha256((str(index)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
                     refs=collect_character_reference_images(scene,characters)
-                    self.root.after(0,lambda n=index+1,total=len(scenes):self.comfy_status.config(text=f"AI görseli üretiliyor: {n}/{total}"))
-                    result=comfyui_generate_image(base_url,workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
+                    self.root.after(0,lambda n=index+1,total=len(scenes):self.comfy_status.config(text=f"AI sahne görseli üretiliyor: {n}/{total}"))
+                    result=comfyui_generate_image("http://127.0.0.1:8188",workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
                     results.append((index,result))
                 self.root.after(0,lambda r=results:self._comfy_all_done(r,None))
             except Exception as exc:
