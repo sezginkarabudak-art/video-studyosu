@@ -130,7 +130,36 @@ def draw_scene_subjects(draw, text, w, h, kind, seed):
     rng=random.Random(seed + sum(ord(ch) for ch in t[:180]))
     def ln(points, fill=(5,5,8,235), width=5):
         draw.line(points, fill=fill, width=width)
-    if any(k in t for k in ["koridor","oda","içeri girdi","kapıyı aç","evin içinde"]):
+    if any(k in t for k in ["mutfak","tezgah","ocak","tencere","yemek hazırl"]):
+        # Kitchen: counter, cabinets, tiled backsplash and cooker.
+        draw.rectangle((0,int(h*.18),w,int(h*.62)),fill=(72,61,52,170))
+        for x in [int(w*.12),int(w*.39),int(w*.66)]:
+            draw.rectangle((x,int(h*.22),x+int(w*.20),int(h*.48)),fill=(35,39,43,245),outline=(175,155,125,210),width=4)
+            draw.ellipse((x+int(w*.08),int(h*.29),x+int(w*.12),int(h*.34)),fill=(205,185,145,220))
+        draw.rectangle((0,int(h*.62),w,int(h*.75)),fill=(95,77,60,245))
+        draw.rectangle((int(w*.12),int(h*.75),int(w*.88),int(h*.80)),fill=(35,30,28,245))
+        for x in [int(w*.30),int(w*.50),int(w*.70)]:
+            draw.ellipse((x-int(w*.035),int(h*.72),x+int(w*.035),int(h*.76)),outline=(210,195,165,220),width=5)
+    elif any(k in t for k in ["hastane","ameliyat","doktor","hemşire","acil servis"]):
+        draw.rectangle((int(w*.08),int(h*.16),int(w*.92),int(h*.78)),fill=(180,195,195,95),outline=(215,225,220,190),width=5)
+        draw.rectangle((int(w*.18),int(h*.30),int(w*.82),int(h*.66)),fill=(205,215,210,235),outline=(65,85,90,220),width=5)
+        draw.rectangle((int(w*.24),int(h*.22),int(w*.76),int(h*.34)),fill=(230,235,225,240))
+        draw.line((int(w*.50),int(h*.23),int(w*.50),int(h*.32)),fill=(170,35,40,240),width=8)
+        draw.line((int(w*.46),int(h*.275),int(w*.54),int(h*.275)),fill=(170,35,40,240),width=8)
+    elif any(k in t for k in ["okul","sınıf","öğretmen","öğrenci","tahta"]):
+        draw.rectangle((int(w*.12),int(h*.16),int(w*.88),int(h*.53)),fill=(20,62,53,245),outline=(155,125,85,230),width=8)
+        draw.line((int(w*.18),int(h*.31),int(w*.48),int(h*.31)),fill=(225,225,205,200),width=4)
+        draw.line((int(w*.18),int(h*.39),int(w*.63),int(h*.39)),fill=(225,225,205,180),width=4)
+        for x in [int(w*.22),int(w*.48),int(w*.72)]:
+            draw.rectangle((x,int(h*.65),x+int(w*.13),int(h*.72)),fill=(105,70,43,245))
+            draw.line((x+int(w*.02),int(h*.72),x,int(h*.88)),fill=(35,27,22,245),width=7)
+            draw.line((x+int(w*.11),int(h*.72),x+int(w*.13),int(h*.88)),fill=(35,27,22,245),width=7)
+    elif any(k in t for k in ["ofis","büro","toplantı","masa başı","bilgisayar"]):
+        draw.rectangle((int(w*.12),int(h*.18),int(w*.88),int(h*.64)),fill=(35,48,58,210),outline=(120,140,150,180),width=5)
+        draw.rectangle((int(w*.22),int(h*.35),int(w*.48),int(h*.62)),fill=(12,18,25,250),outline=(160,170,175,220),width=5)
+        draw.rectangle((int(w*.17),int(h*.64),int(w*.83),int(h*.71)),fill=(95,65,43,245))
+        draw.rectangle((int(w*.57),int(h*.38),int(w*.78),int(h*.63)),fill=(15,22,30,245),outline=(170,180,185,190),width=4)
+    elif any(k in t for k in ["koridor","oda","içeri girdi","kapıyı aç","evin içinde"]):
         van=(int(w*.52),int(h*.40))
         ln([(0,int(h*.08)),van,(w,int(h*.08))],(8,8,12,230),12)
         ln([(0,int(h*.82)),van,(w,int(h*.82))],(8,8,12,230),14)
