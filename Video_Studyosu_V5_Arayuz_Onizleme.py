@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Karabudak Film Stüdyoları V5.5.2"
-APP_VERSION = "5.5.2"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.0"
+APP_VERSION = "5.6.0"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
