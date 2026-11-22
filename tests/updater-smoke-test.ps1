@@ -18,7 +18,9 @@ function Write-Manifest([string]$path, [object[]]$files) {
   $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding UTF8
 }
 function Invoke-UpdaterBatch([string]$batchPath, [string]$targetPath) {
-  & $batchPath $targetPath
+  $commandLine = 'call "{0}" "{1}"' -f $batchPath, $targetPath
+  $output = & $env:ComSpec /d /c $commandLine 2>&1
+  $output | ForEach-Object { Write-Host $_ }
   return $LASTEXITCODE
 }
 try {
