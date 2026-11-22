@@ -9,8 +9,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.7"
-APP_VERSION = "5.6.7"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.8"
+APP_VERSION = "5.6.8"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -1580,6 +1580,7 @@ class VideoStudio:
         preview_top=ttk.Frame(preview_box); preview_top.pack(fill="x")
         ttk.Button(preview_top,text="SEÇİLİ SAHNEYİ AI İLE OLUŞTUR",command=self.generate_comfy_visual).pack(side="left")
         ttk.Button(preview_top,text="TÜM SAHNELERİ AI İLE OLUŞTUR",command=self.generate_all_comfy_visuals).pack(side="left",padx=5)
+        ttk.Button(preview_top,text="VİDEOYU OLUŞTUR",command=self.create_video).pack(side="left",padx=5)
         self.comfy_url_var=tk.StringVar(value="http://127.0.0.1:8188")
         self.comfy_workflow_var=tk.StringVar(value="")
         self.comfy_status=ttk.Label(preview_box,text="Otomatik görsel motoru: Kurulu yerel motor aranır ve gerekirse kendisi başlatılır.",foreground="#777")
@@ -1598,7 +1599,7 @@ class VideoStudio:
         ttk.Button(order,text="Görsel seç",command=self.choose_image).pack(side="left",padx=5)
         ttk.Button(order,text="Varsayılan görsele dön",command=self.reset_scene_image).pack(side="left",padx=5)
         ttk.Button(order,text="Kendi sesimi seç",command=self.choose_audio).pack(side="left")
-        ttk.Button(order,text="Görsel oluştur",command=self.generate_visual).pack(side="left",padx=5)
+        
 
         ttk.Label(right,text="Video ayarları",font=("Segoe UI",12,"bold")).pack(anchor="w")
         self.ratio=tk.StringVar(value="16:9")
@@ -2080,7 +2081,11 @@ class VideoStudio:
             apply_camera_framing(p,camera_path,camera_request,self.preview_canvas_size())
             im=Image.open(camera_path).convert("RGB")
             im.thumbnail((900,560),Image.Resampling.LANCZOS)
-            self.preview_photo=ImageTk.PhotoImage(im)
+            # Show the still inside the editor as well as the optional large preview window.
+            self.preview_inline_photo=ImageTk.PhotoImage(im.copy())
+            if hasattr(self,"preview_label") and self.preview_label.winfo_exists():
+                self.preview_label.configure(image=self.preview_inline_photo,text="")
+            self.preview_photo=ImageTk.PhotoImage(im.copy())
             # Keep the preview in a separate window for reliable visibility.
             if not hasattr(self,"preview_window") or not self.preview_window.winfo_exists():
                 self.preview_window=tk.Toplevel(self.root)
@@ -2253,6 +2258,7 @@ class VideoStudio:
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
         self.comfy_status.config(text="Görsel motoru otomatik hazırlanıyor...")
+        self.preview_label.configure(image="",text="İlk kurulum veya sahne görseli hazırlanıyor. İşlem bitince ön izleme burada görünecek.")
         self.set_status("Görsel motoru hazırlanıyor; ilk kurulumda büyük dosyalar indirilebilir.")
         def worker():
             try:
@@ -2281,6 +2287,7 @@ class VideoStudio:
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
         self.comfy_busy=True
         self.comfy_status.config(text="Görsel motoru otomatik hazırlanıyor...")
+        self.preview_label.configure(image="",text="İlk kurulum veya sahne görselleri hazırlanıyor. İşlem bitince ön izleme burada görünecek.")
         self.set_status("Görsel motoru hazırlanıyor; ilk kurulumda büyük dosyalar indirilebilir.")
         def worker():
             results=[]
