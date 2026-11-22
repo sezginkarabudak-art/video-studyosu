@@ -88,6 +88,23 @@ def build_character_consistency_prompt(scene, characters):
     return " ".join(details)
 
 
+def build_scene_continuity_prompt(scene, scene_index, scenes):
+    """Carry forward adjacent scene context without overriding explicit new scene details."""
+    if scene_index <= 0 or scene_index >= len(scenes):
+        return ""
+    previous=scenes[scene_index-1]
+    previous_text=(previous.get("text") or "").strip()
+    previous_request=(previous.get("visual_request") or "").strip()
+    if not previous_text and not previous_request:
+        return ""
+    context=" ".join(x for x in (previous_text,previous_request) if x)
+    return ("CONTINUITY FROM THE IMMEDIATELY PRECEDING SHOT: maintain the same "
+            "characters, visual design, lighting direction, location layout and "
+            "props where the story implies the same moment. Previous shot context: "
+            +context+". Do not copy a previous location or costume when this scene "
+            "explicitly establishes a change.")
+
+
 def comfyui_upload_reference_image(base_url, image_path):
     """Upload a character reference to ComfyUI input storage and return its server-side name."""
     path=Path(image_path)
@@ -1481,6 +1498,9 @@ class VideoStudio:
         self.character_wardrobe=tk.Text(right,height=3,wrap="word")
         self.character_wardrobe.pack(fill="x",pady=(2,10))
         self.character_image_label=ttk.Label(right,text="Referans fotoğrafı seçilmedi"); self.character_image_label.pack(anchor="w",pady=4)
+        ttk.Button(right,text="Farklı açılardan referans fotoğrafları ekle",command=self.choose_character_references).pack(anchor="w",pady=3)
+        self.character_references_label=ttk.Label(right,text="Ek referans: yok",wraplength=650,foreground="#777")
+        self.character_references_label.pack(anchor="w",pady=2)
         self.character_preview_label=ttk.Label(right,text="Karakter ön izlemesi",anchor="center"); self.character_preview_label.pack(fill="x",pady=6)
         self.character_preview_photo=None
         ttk.Button(right,text="Ön izlemeyi yenile / yeniden oluştur",command=self.refresh_character_preview).pack(anchor="w",pady=4)
@@ -1497,6 +1517,7 @@ class VideoStudio:
         ttk.Button(right,text="Seçili karakteri sahneye bağla",command=self.assign_character).pack(anchor="w",pady=4)
         ttk.Label(right,text="Not: Karakter fotoğrafı, videoda küçük bir referans portresi olarak görünür. Gerçek AI karakter tutarlılığı için harici görsel üretim modeli gerekir.",wraplength=700,foreground="#666").pack(anchor="w",pady=12)
         self.character_image=""
+        self.character_reference_images=[]
         self.refresh_characters()
 
     def refresh_characters(self):
@@ -1512,10 +1533,29 @@ class VideoStudio:
         if not sel:return
         c=self.project.get("characters",[])[sel[0]]
         self.character_name.set(c.get("name","")); self.character_image=c.get("image","")
+        self.character_reference_images=list(c.get("reference_images",[]))
         self.character_desc.delete("1.0","end"); self.character_desc.insert("1.0",c.get("description",""))
         self.character_wardrobe.delete("1.0","end"); self.character_wardrobe.insert("1.0",c.get("wardrobe",""))
         self.character_image_label.config(text=Path(self.character_image).name if self.character_image else "Referans fotoğrafı seçilmedi")
+        self.refresh_character_references_label()
         self.refresh_character_preview()
+
+    def refresh_character_references_label(self):
+        refs=getattr(self,"character_reference_images",[])
+        valid=[p for p in refs if p and Path(p).is_file()]
+        self.character_references_label.config(text=("Ek referanslar: "+", ".join(Path(p).name for p in valid)) if valid else "Ek referans: yok")
+
+    def choose_character_references(self):
+        paths=filedialog.askopenfilenames(title="Karakterin farklı açılardan fotoğraflarını seç",
+            filetypes=[("Görsel","*.png *.jpg *.jpeg *.webp *.bmp")])
+        if paths:
+            current=list(getattr(self,"character_reference_images",[]))
+            for path in paths:
+                if path != self.character_image and path not in current:
+                    current.append(path)
+            self.character_reference_images=current
+            self.refresh_character_references_label()
+            self.set_status(f"{len(current)} ek karakter referansı kaydedilmek üzere seçildi.")
 
     def choose_character_image(self):
         path=filedialog.askopenfilename(filetypes=[("Görsel","*.png *.jpg *.jpeg *.webp *.bmp")])
@@ -1566,7 +1606,8 @@ class VideoStudio:
         desc=self.character_desc.get("1.0","end").strip()
         wardrobe=self.character_wardrobe.get("1.0","end").strip()
         sel=self.character_list.curselection()
-        item={"name":name,"description":desc,"wardrobe":wardrobe,"image":self.character_image}
+        item={"name":name,"description":desc,"wardrobe":wardrobe,"image":self.character_image,
+              "reference_images":[p for p in getattr(self,"character_reference_images",[]) if p and Path(p).is_file()]}
         if sel:self.project["characters"][sel[0]]=item
         else:self.project.setdefault("characters",[]).append(item)
         self.refresh_characters(); self.character_list.selection_clear(0,"end"); self.character_list.selection_set(len(self.project["characters"])-1); self.refresh_character_preview(); self.set_status("Karakter kütüphaneye kaydedildi.")
@@ -1845,13 +1886,14 @@ class VideoStudio:
         scene=self.project["scenes"][i]
         request=scene.get("visual_request","")
         character_cues=build_character_consistency_prompt(scene,self.project.get("characters",[]))
+        continuity_cues=build_scene_continuity_prompt(scene,i,self.project.get("scenes",[]))
         camera_cues=("Camera framing: "+next((label for keys,label in [
             (("yakın plan","yakın çekim","close-up","close up"),"close-up shot"),
             (("geniş açı","genel plan","uzak plan","wide shot"),"wide establishing shot"),
             (("tepeden çekim","üst açı","kuş bakışı","top-down"),"high-angle overhead shot"),
             (("alttan çekim","alt açı","low angle"),"low-angle shot")
         ] if any(k in request.lower() for k in keys)),"cinematic eye-level framing")+". ")
-        prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues).strip()
+        prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
         character_images=[]
@@ -1862,9 +1904,11 @@ class VideoStudio:
             char_ids=[old_id] if isinstance(old_id,int) else []
         for char_id in char_ids:
             if isinstance(char_id,int) and 0<=char_id<len(character_list):
-                image_path=character_list[char_id].get("image","")
-                if image_path and Path(image_path).is_file():
-                    character_images.append(image_path)
+                char=character_list[char_id]
+                image_paths=[char.get("image","")]+list(char.get("reference_images",[]))
+                for image_path in image_paths:
+                    if image_path and Path(image_path).is_file() and image_path not in character_images:
+                        character_images.append(image_path)
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
         self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
