@@ -439,7 +439,7 @@ class VideoStudio:
         shell=tk.Frame(self.root,bg=bg); shell.pack(fill="both",expand=True)
         side=tk.Frame(shell,bg="#15181d",width=252,highlightthickness=1,highlightbackground="#30343a")
         side.pack(side="left",fill="y"); side.pack_propagate(False)
-        tk.Label(side,text="☰",font=("Segoe UI",22),bg="#15181d",fg="#eeeeee").pack(anchor="w",padx=24,pady=(10,16))
+        tk.Button(side,text="☰",font=("Segoe UI",22),bg="#15181d",fg="#eeeeee",activebackground="#30343a",activeforeground="white",relief="flat",bd=0,command=self.toggle_menu).pack(anchor="w",padx=16,pady=(8,14))
         try: style.layout("Hidden.TNotebook.Tab", [])
         except Exception: pass
         style.configure("Hidden.TNotebook",background=bg,borderwidth=0)
@@ -477,60 +477,89 @@ class VideoStudio:
             self._apply_dark_widgets(child)
 
     def build_home_tab(self):
-        self.home_tab.configure(bg="#101216")
-        hero=tk.Canvas(self.home_tab,bg="#090d12",height=560,highlightthickness=0)
+        """Sinematik stüdyo ana ekranı: yüksek çözünürlüklü fon ve hızlı erişim kartları."""
+        self.home_tab.configure(bg="#0b0d11")
+        hero=tk.Canvas(self.home_tab,bg="#0b0d11",height=600,highlightthickness=0)
         hero.pack(fill="both",expand=True)
+
+        def make_backdrop(w,h):
+            W,H=max(1000,w)*2,max(600,h)*2
+            im=Image.new("RGB",(W,H))
+            pix=im.load()
+            top=(8,11,17); bottom=(42,25,22)
+            for y in range(H):
+                t=y/max(1,H-1); c=tuple(int(top[i]*(1-t)+bottom[i]*t) for i in range(3))
+                for x in range(W): pix[x,y]=c
+            glow=Image.new("RGBA",(W,H),(0,0,0,0)); gd=ImageDraw.Draw(glow)
+            gd.polygon([(W*.48,0),(W*.88,0),(W*.72,H*.76),(W*.38,H*.76)],fill=(230,155,94,38))
+            glow=glow.filter(ImageFilter.GaussianBlur(85))
+            im=Image.alpha_composite(im.convert("RGBA"),glow)
+            d=ImageDraw.Draw(im,"RGBA")
+            d.rectangle((0,H*.70,W,H),fill=(5,7,10,245))
+            d.line((0,H*.70,W,H*.70),fill=(174,119,81,100),width=4)
+            # Film makaraları
+            for cx,cy,r in [(W*.12,H*.72,H*.18),(W*.29,H*.75,H*.12)]:
+                cx,cy,r=int(cx),int(cy),int(r)
+                d.ellipse((cx-r,cy-r,cx+r,cy+r),fill=(12,15,20,255),outline=(190,139,93,255),width=10)
+                d.ellipse((cx-r*.70,cy-r*.70,cx+r*.70,cy+r*.70),outline=(107,76,56,255),width=8)
+                d.ellipse((cx-r*.22,cy-r*.22,cx+r*.22,cy+r*.22),fill=(4,6,9,255),outline=(205,157,111,255),width=6)
+                for a in range(0,360,60):
+                    import math
+                    xx=cx+int(r*.47*math.cos(math.radians(a))); yy=cy+int(r*.47*math.sin(math.radians(a)))
+                    rr=int(r*.12); d.ellipse((xx-rr,yy-rr,xx+rr,yy+rr),fill=(4,6,9,255),outline=(134,97,68,255),width=4)
+            # Türk bayrağı
+            fx,fy,fw,fh=int(W*.80),int(H*.24),int(W*.17),int(H*.23)
+            d.rounded_rectangle((fx,fy,fx+fw,fy+fh),radius=10,fill=(145,19,25,255),outline=(221,180,151,130),width=3)
+            mx,my,mr=fx+int(fw*.40),fy+int(fh*.50),int(fh*.29)
+            d.ellipse((mx-mr,my-mr,mx+mr,my+mr),fill=(255,248,235,255))
+            d.ellipse((mx-mr*.52,my-mr*.82,mx+mr*1.08,my+mr*.82),fill=(145,19,25,255))
+            pts=[]
+            for k in range(10):
+                a=-math.pi/2+k*math.pi/5; rr=mr*(.38 if k%2==0 else .16)
+                pts.append((mx+int(fw*.21)+rr*math.cos(a),my+rr*math.sin(a)))
+            d.polygon(pts,fill=(255,248,235,255))
+            # Kamera gövdesi, lens ve tripod
+            cx,cy=int(W*.65),int(H*.51)
+            d.rounded_rectangle((cx-W*.105,cy-H*.10,cx+W*.13,cy+H*.08),radius=28,fill=(14,19,25,255),outline=(184,133,88,255),width=9)
+            d.polygon([(cx+W*.12,cy-H*.08),(cx+W*.22,cy-H*.14),(cx+W*.22,cy+H*.12),(cx+W*.12,cy+H*.06)],fill=(12,16,22,255),outline=(184,133,88,255))
+            d.ellipse((cx-H*.12,cy-H*.22,cx+H*.12,cy+H*.02),fill=(5,8,13,255),outline=(212,162,111,255),width=9)
+            d.ellipse((cx-H*.08,cy-H*.18,cx+H*.08,cy-H*.02),fill=(19,39,52,255),outline=(107,153,169,255),width=6)
+            d.ellipse((cx-H*.04,cy-H*.14,cx+H*.04,cy-H*.06),fill=(2,5,9,255),outline=(194,151,105,255),width=5)
+            d.line((cx-W*.02,cy+H*.08,cx-W*.10,H*.91),fill=(130,91,61,255),width=14)
+            d.line((cx+W*.05,cy+H*.08,cx+W*.12,H*.91),fill=(130,91,61,255),width=14)
+            d.line((cx+W*.01,cy+H*.08,cx+W*.015,H*.91),fill=(130,91,61,255),width=12)
+            # Klaket
+            kx,ky,kw,kh=int(W*.42),int(H*.67),int(W*.13),int(H*.13)
+            d.rounded_rectangle((kx,ky,kx+kw,ky+kh),radius=9,fill=(17,20,25,255),outline=(197,147,102,255),width=5)
+            d.rectangle((kx,ky,kx+kw,ky+kh*.23),fill=(208,198,183,255))
+            for xx in range(kx,kx+kw,30):
+                d.polygon([(xx,ky),(xx+15,ky),(xx+29,ky+kh*.23),(xx+14,ky+kh*.23)],fill=(30,32,35,255))
+            d.text((kx+12,ky+kh*.43),"KARABUDAK",font=font(max(13,int(H*.018)),True),fill=(245,225,204,255))
+            im=im.convert("RGB").resize((w,h),Image.Resampling.LANCZOS)
+            return ImageTk.PhotoImage(im)
+
         def paint(event=None):
             hero.delete("all")
             w=max(hero.winfo_width(),900); h=max(hero.winfo_height(),560)
-            hero.create_rectangle(0,0,w,h,fill="#090d12",outline="")
-            # cinematic dusk skyline and studio lighting
-            hero.create_rectangle(0,int(h*.56),w,int(h*.88),fill="#34221e",outline="")
-            for x in range(0,w,8):
-                y=int(h*.56 + 35*__import__("math").sin(x/95) + 15*__import__("math").sin(x/31))
-                hero.create_line(x,y,x,int(h*.88),fill="#3b2824",width=2)
-            for x,y,r in [(int(w*.13),int(h*.59),55),(int(w*.22),int(h*.64),34),(int(w*.43),int(h*.67),90)]:
-                hero.create_oval(x-r,y-r,x+r,y+r,outline="#b77b4f",width=7,fill="#111318")
-                hero.create_oval(x-r*.68,y-r*.68,x+r*.68,y+r*.68,outline="#70452f",width=4)
-                hero.create_oval(x-r*.25,y-r*.25,x+r*.25,y+r*.25,outline="#b77b4f",width=3)
-            # camera body and tripod
-            cx=int(w*.62); cy=int(h*.31)
-            hero.create_oval(cx-75,cy-90,cx+65,cy+50,fill="#111820",outline="#b77b4f",width=5)
-            hero.create_oval(cx-48,cy-63,cx+38,cy+23,fill="#05080c",outline="#d5a16d",width=4)
-            hero.create_rectangle(cx-90,cy-20,cx+135,cy+95,fill="#11161d",outline="#a97952",width=4)
-            hero.create_polygon(cx+130,cy-5,cx+220,cy-40,cx+220,cy+115,cx+130,cy+80,fill="#151b22",outline="#a97952",width=4)
-            hero.create_line(cx-20,cy+95,cx-100,h*.88,fill="#9c704c",width=9)
-            hero.create_line(cx+45,cy+95,cx+110,h*.88,fill="#9c704c",width=9)
-            hero.create_line(cx+10,cy+95,cx+5,h*.88,fill="#9c704c",width=9)
-            # warm spotlight and Turkish flag
-            hero.create_rectangle(w*.79,0,w*.99,h*.57,fill="#4b0e0d",outline="")
-            hero.create_oval(w*.82,h*.08,w*.98,h*.48,fill="#7c1815",outline="")
-            hero.create_oval(w*.855,h*.16,w*.93,h*.42,outline="#e8d8c8",width=7)
-            hero.create_oval(w*.88,h*.16,w*.955,h*.42,fill="#7c1815",outline="")
-            hero.create_text(w*.915,h*.33,text="★",font=("Segoe UI",38,"bold"),fill="#f2e6db")
-            hero.create_text(36, h*.22,anchor="w",text="KARABUDAK",font=("Georgia",42,"bold"),fill="#ead7c4")
-            hero.create_text(40,h*.30,anchor="w",text="FİLM STÜDYOLARI",font=("Georgia",25,"bold"),fill="#e5b99a")
-            hero.create_line(40,h*.34,w*.47,h*.34,fill="#d32a20",width=4)
-            hero.create_text(40,h*.39,anchor="w",text="Fikrinden filme, kendi hikâyeni üret.",font=("Segoe UI",14),fill="#e0d8d2")
-            # director chair
-            x=w*.77; y=h*.58
-            hero.create_rectangle(x,y,x+w*.13,y+12,fill="#9b633f",outline="#d19a70",width=3)
-            hero.create_line(x+8,y+10,x-10,h*.91,fill="#a97852",width=9)
-            hero.create_line(x+w*.12,y+10,x+w*.15,h*.91,fill="#a97852",width=9)
-            hero.create_rectangle(x+8,y-75,x+w*.12,y-10,fill="#17171a",outline="#b77b4f",width=4)
-            hero.create_text(x+w*.065,y-44,text="KARABUDAK",font=("Segoe UI",12,"bold"),fill="#f0d6c5")
-            # shortcut cards
-            labels=[("🎬","Yeni Video","Oluştur",1),("♟","Karakter","Yarat / Seç",3),("▤","Senaryo","Oluştur",4),("▣","Sahne","Düzenle",1),("📁","Projelerim","",2)]
-            gap=16; left=24; cardw=(w-left*2-gap*4)/5; top=h-148
+            self._home_backdrop=make_backdrop(w,h)
+            hero.create_image(0,0,anchor="nw",image=self._home_backdrop)
+            hero.create_rectangle(24,24,w*.47,h*.40,fill="#080a0e",outline="#704b38",width=1,stipple="gray50")
+            hero.create_text(48,h*.105,anchor="w",text="KARABUDAK",font=("Georgia",34,"bold"),fill="#f0dfce")
+            hero.create_text(50,h*.18,anchor="w",text="FİLM STÜDYOLARI",font=("Georgia",20,"bold"),fill="#d7a17c")
+            hero.create_rectangle(50,h*.225,w*.34,h*.225+3,fill="#c52b25",outline="")
+            hero.create_text(50,h*.29,anchor="w",text="Fikrinden filme, kendi hikâyeni üret.",font=("Segoe UI",12),fill="#e8ded5")
+            hero.create_text(50,h*.35,anchor="w",text="YAZ  •  TASARLA  •  KURGULA  •  YAYINLA",font=("Segoe UI",9,"bold"),fill="#c8a68e")
+            labels=[("🎬","YENİ VİDEO","Oluştur",1),("♟","KARAKTER","Stüdyosu",3),("▤","SENARYO","Yazarı",4),("▣","SAHNE","Düzenleyici",1),("▱","VİDEO","Arşivi",2)]
+            gap=12; left=22; cardw=(w-left*2-gap*4)/5; top=h-142
             for i,(ico,a,b,idx) in enumerate(labels):
-                x=left+i*(cardw+gap); active=i==0
-                hero.create_rectangle(x,top,x+cardw,top+126,fill="#351817" if active else "#211b1b",outline="#e33a2c" if active else "#70433a",width=2)
-                hero.create_text(x+cardw/2,top+38,text=ico,font=("Segoe UI Symbol",34),fill="#f0d8ca")
-                hero.create_text(x+cardw/2,top+78,text=a,font=("Segoe UI",15,"bold"),fill="white")
-                if b: hero.create_text(x+cardw/2,top+101,text=b,font=("Segoe UI",14,"bold"),fill="white")
-                hero.tag_bind(hero.create_rectangle(x,top,x+cardw,top+126,outline="",fill=""),"<Button-1>",lambda e,j=idx:self._select_tab(j))
-            hero.create_rectangle(0,h-26,w,h,fill="#171a1f",outline="#34383e")
-            hero.create_text(24,h-13,anchor="w",text="●  Hazır     |     Karabudak Film Stüdyoları  v"+APP_VERSION,font=("Segoe UI",10),fill="#e6e4e1")
+                x=left+i*(cardw+gap); active=i==0; tag=f"home_card_{i}"
+                rect=hero.create_rectangle(x,top,x+cardw,top+112,fill="#351819" if active else "#17191e",outline="#d83a30" if active else "#675047",width=2,tags=(tag,))
+                hero.create_text(x+cardw/2,top+30,text=ico,font=("Segoe UI Symbol",27),fill="#f2d9c7",tags=(tag,))
+                hero.create_text(x+cardw/2,top+66,text=a,font=("Segoe UI",11,"bold"),fill="#fff8f1",tags=(tag,))
+                hero.create_text(x+cardw/2,top+88,text=b,font=("Segoe UI",10),fill="#d5c6bb",tags=(tag,))
+                hero.tag_bind(tag,"<Button-1>",lambda e,j=idx:self._select_tab(j))
+            hero.create_rectangle(0,h-23,w,h,fill="#111419",outline="#3c3432")
+            hero.create_text(20,h-11,anchor="w",text="●  STÜDYO HAZIR     |     Karabudak Film Stüdyoları  v"+APP_VERSION,font=("Segoe UI",9),fill="#e6ded8")
         hero.bind("<Configure>",paint)
         self.home_hero=hero
 
