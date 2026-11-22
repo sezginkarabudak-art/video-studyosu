@@ -20,18 +20,20 @@ class _Response:
 
 class VisualEngineTests(unittest.TestCase):
     @patch("Video_Studyosu_V5_Arayuz_Onizleme.urllib.request.urlopen")
-    def test_auto_workflow_uses_first_installed_checkpoint(self, mocked_open):
-        mocked_open.return_value = _Response(["cinematicXL.safetensors", "other.safetensors"])
+    def test_auto_workflow_prefers_realistic_sdxl_checkpoint(self, mocked_open):
+        mocked_open.return_value = _Response(["anime_model.safetensors", "realvisXL_sdxl.safetensors", "base.safetensors"])
         with tempfile.TemporaryDirectory() as tmp:
             with patch("Video_Studyosu_V5_Arayuz_Onizleme.tempfile.gettempdir", return_value=tmp):
                 path, checkpoint = app.create_default_comfyui_workflow(
                     "http://127.0.0.1:8188", 1024, 1792
                 )
-            self.assertEqual(checkpoint, "cinematicXL.safetensors")
+            self.assertEqual(checkpoint, "realvisXL_sdxl.safetensors")
             workflow = json.loads(Path(path).read_text(encoding="utf-8"))
             self.assertEqual(workflow["1"]["inputs"]["ckpt_name"], checkpoint)
-            self.assertEqual(workflow["4"]["inputs"]["width"], 1024)
-            self.assertEqual(workflow["4"]["inputs"]["height"], 1792)
+            self.assertEqual(workflow["4"]["inputs"]["width"], 768)
+            self.assertEqual(workflow["4"]["inputs"]["height"], 1344)
+            self.assertIn("photorealistic", workflow["2"]["inputs"]["text"])
+            self.assertIn("stick figure", workflow["3"]["inputs"]["text"])
             self.assertEqual(workflow["5"]["inputs"]["denoise"], 1.0)
             self.assertEqual(workflow["7"]["class_type"], "SaveImage")
 
