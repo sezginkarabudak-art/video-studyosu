@@ -7,9 +7,10 @@ import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, 
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.0"
-APP_VERSION = "5.6.0"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.2"
+APP_VERSION = "5.6.2"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -1199,13 +1200,23 @@ class VideoStudio:
         box.pack(fill="x",anchor="n")
         ttk.Label(box,text=f"Kurulu sürüm: {APP_VERSION}",font=("Segoe UI",12,"bold")).pack(anchor="w",pady=(0,8))
         ttk.Label(box,text="Yeni sürümü kontrol et, indirme ve kurulum aşamalarını durum çubuğundan izle. Kurulum sırasında program kapanır ve işlem tamamlanınca yeniden açılır. Proje ve video klasörlerin korunur.",wraplength=760,justify="left").pack(anchor="w",pady=(0,14))
-        ttk.Button(box,text="Güncellemeleri kontrol et",command=self.check_for_updates).pack(anchor="w")
+        self.update_check_button = ttk.Button(box,text="Güncellemeleri kontrol et",command=self.check_for_updates)
+        self.update_check_button.pack(anchor="w")
+        self.update_status_var = tk.StringVar(value="Henüz kontrol edilmedi.")
+        ttk.Label(box,textvariable=self.update_status_var,wraplength=760,justify="left",foreground="#245b8f").pack(anchor="w",pady=(12,0))
         ttk.Label(self.update_tab,text="Projelerin ve dışa aktardığın videolar güncelleme sırasında korunur. Program dosyası değiştirilmeden önce yedeklenir.",foreground="#555",wraplength=760,justify="left").pack(anchor="w",pady=16)
+
+    def _set_update_status(self, message, checking=False):
+        self.update_status_var.set(message)
+        self.update_check_button.config(state=("disabled" if checking else "normal"))
 
     def check_for_updates(self):
         if self.busy:
+            self._set_update_status("Kontrol yapılamadı: Video hazırlanırken güncelleme kontrol edilemez.")
             messagebox.showinfo("Güncelleme", "Video hazırlanırken güncelleme kontrol edilemez.")
             return
+        self._set_update_status("GitHub üzerinde yeni sürüm kontrol ediliyor...", checking=True)
+        self.set_status("Güncelleme kontrol ediliyor...")
         threading.Thread(target=self._check_for_updates_worker, kwargs={"silent": False}, daemon=True).start()
 
     def _check_for_updates_worker(self, silent=True):
@@ -1218,23 +1229,36 @@ class VideoStudio:
             if not tag:
                 raise RuntimeError("GitHub'da yayımlanmış bir sürüm bulunamadı.")
             if self._version_tuple(tag) <= self._version_tuple(APP_VERSION):
-                if not silent: self.root.after(0, lambda: messagebox.showinfo("Güncelleme", f"Program güncel.\nKurulu sürüm: {APP_VERSION}"))
+                def current():
+                    self._set_update_status(f"Program güncel. Kurulu sürüm: {APP_VERSION} | Son sürüm: {tag}")
+                    self.set_status("Güncelleme kontrolü tamamlandı: program güncel.")
+                    if not silent:
+                        messagebox.showinfo("Güncelleme", f"Program güncel.\nKurulu sürüm: {APP_VERSION}\nSon sürüm: {tag}")
+                self.root.after(0, current)
                 return
             patch_name = f"VideoStudyosu_Patch_from_{APP_VERSION}.zip"
             asset = next((a for a in release.get("assets", []) if a.get("name") == patch_name), None)
-            if asset:
-                package_type = "yama"
-            else:
+            package_type = "yama" if asset else "tam"
+            if not asset:
                 asset = next((a for a in release.get("assets", []) if a.get("name") == UPDATE_ASSET), None)
-                package_type = "tam"
             if not asset:
                 raise RuntimeError("Yeni sürüm bulundu ancak uyumlu yama veya tam kurulum paketi yayımlanmamış.")
             download_url = asset.get("browser_download_url", "")
             if not download_url:
                 raise RuntimeError("Yeni sürüm paketi için indirme bağlantısı bulunamadı.")
-            self.root.after(0, lambda v=tag, p=package_type: self._ask_update(v, download_url, p))
+            def found():
+                self._set_update_status(f"Yeni sürüm bulundu: {tag} ({package_type} paket). Onay bekleniyor.")
+                self.set_status(f"Yeni sürüm bulundu: {tag}")
+                self._ask_update(tag, download_url, package_type)
+            self.root.after(0, found)
         except Exception as exc:
-            if not silent: self.root.after(0, lambda e=str(exc): messagebox.showerror("Güncelleme kontrolü", "Güncelleme kontrol edilemedi.\n" + e))
+            error_text = str(exc)
+            def failed():
+                self._set_update_status("Güncelleme kontrolü başarısız: " + error_text)
+                self.set_status("Güncelleme kontrolü başarısız.")
+                if not silent:
+                    messagebox.showerror("Güncelleme kontrolü", "Güncelleme kontrol edilemedi.\n" + error_text)
+            self.root.after(0, failed)
 
     @staticmethod
     def _version_tuple(value):
@@ -1401,6 +1425,10 @@ class VideoStudio:
         ttk.Label(right,text="Müzik seviyesi").pack(anchor="w",pady=(8,2))
         self.music_vol=tk.IntVar(value=12)
         ttk.Scale(right,from_=0,to=40,variable=self.music_vol,orient="horizontal").pack(fill="x")
+        ttk.Label(right,text="Görsel efekt paketi").pack(anchor="w",pady=(9,2))
+        self.visual_effect=tk.StringVar(value="Sinematik")
+        ttk.Combobox(right,textvariable=self.visual_effect,values=list(VIDEO_EFFECT_PRESETS),state="readonly").pack(fill="x")
+        ttk.Label(right,text="Efektler FFmpeg ile yerel uygulanır; ek API veya abonelik gerekmez.",foreground="#777",wraplength=280).pack(anchor="w",pady=(3,2))
         ttk.Separator(right).pack(fill="x",pady=12)
         ttk.Button(right,text="VİDEOYU OLUŞTUR",command=self.create_video).pack(fill="x",ipady=10)
         self.progress=ttk.Progressbar(right,mode="indeterminate")
@@ -2111,6 +2139,7 @@ class VideoStudio:
         self.project["rate"]=int(self.rate.get())
         self.project["voice_volume"]=int(self.voice_vol.get())
         self.project["music_volume"]=int(self.music_vol.get())
+        self.project["visual_effect"]=self.visual_effect.get()
         p=filedialog.asksaveasfilename(initialdir=PROJECT_ROOT,initialfile=safe_name(self.project["name"])+".json",
             defaultextension=".json",filetypes=[("Video Studyosu projesi","*.json")])
         if not p:return
@@ -2146,6 +2175,7 @@ class VideoStudio:
             self.rate.set(self.project.get("rate",0))
             self.voice_vol.set(self.project.get("voice_volume",100))
             self.music_vol.set(self.project.get("music_volume",12))
+            self.visual_effect.set(self.project.get("visual_effect","Sinematik"))
             self.music_label.config(text=Path(self.project.get("music","")).name if self.project.get("music") else "Seçilmedi")
             self.refresh_scenes()
             self.refresh_characters()
@@ -2201,6 +2231,7 @@ class VideoStudio:
         self.project["rate"]=int(self.rate.get())
         self.project["voice_volume"]=int(self.voice_vol.get())
         self.project["music_volume"]=int(self.music_vol.get())
+        self.project["visual_effect"]=self.visual_effect.get()
         # Read Tk variables on the UI thread; the render worker uses plain values only.
         voice_rate,voice_pitch=self.effective_voice_controls()
         self.project["render_voice_rate"]=voice_rate
@@ -2284,12 +2315,16 @@ class VideoStudio:
                     dur=(int(m.group(1))*3600+int(m.group(2))*60+float(m.group(3))) if m else max(4,len(scene["text"])/13)
                     frame=str(assets/f"clip_{idx:03d}.mp4")
                     vf=camera_motion_filter(scene.get("visual_request",""),size,fps)
+                    effect_filter=get_video_effect_filter(self.project.get("visual_effect","Sinematik"))
+                    if effect_filter: vf += "," + effect_filter
                     run_ffmpeg(["-loop","1","-i",img,"-i",a,"-vf",vf,"-t",str(max(2,dur)),"-r",str(fps),"-c:v","libx264","-preset","medium","-b:v","8M","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-shortest",frame])
                 else:
                     # Subtitle-only: show each translated scene for a readable fixed duration.
                     dur=max(4,min(12,len(scene["text"])/18))
                     frame=str(assets/f"clip_{idx:03d}.mp4")
                     vf=camera_motion_filter(scene.get("visual_request",""),size,fps)
+                    effect_filter=get_video_effect_filter(self.project.get("visual_effect","Sinematik"))
+                    if effect_filter: vf += "," + effect_filter
                     run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r",str(fps),"-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
                 clips.append(frame)
 
