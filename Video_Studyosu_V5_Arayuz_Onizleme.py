@@ -1501,6 +1501,7 @@ class VideoStudio:
         ttk.Button(right,text="Farklı açılardan referans fotoğrafları ekle",command=self.choose_character_references).pack(anchor="w",pady=3)
         self.character_references_label=ttk.Label(right,text="Ek referans: yok",wraplength=650,foreground="#777")
         self.character_references_label.pack(anchor="w",pady=2)
+        ttk.Button(right,text="Seçili sahneyi referanslarla karşılaştır",command=self.compare_character_reference).pack(anchor="w",pady=3)
         self.character_preview_label=ttk.Label(right,text="Karakter ön izlemesi",anchor="center"); self.character_preview_label.pack(fill="x",pady=6)
         self.character_preview_photo=None
         ttk.Button(right,text="Ön izlemeyi yenile / yeniden oluştur",command=self.refresh_character_preview).pack(anchor="w",pady=4)
@@ -1539,6 +1540,44 @@ class VideoStudio:
         self.character_image_label.config(text=Path(self.character_image).name if self.character_image else "Referans fotoğrafı seçilmedi")
         self.refresh_character_references_label()
         self.refresh_character_preview()
+
+    def compare_character_reference(self):
+        selected=self.character_list.curselection()
+        scene_index=self.selected_index()
+        if not selected:
+            messagebox.showinfo("Karakter seç","Önce karşılaştırılacak karakteri seç.")
+            return
+        if scene_index is None:
+            messagebox.showinfo("Sahne seç","Önce görseli kontrol edilecek sahneyi seç.")
+            return
+        scene=self.project.get("scenes",[])[scene_index]
+        generated=scene.get("image","")
+        if not generated or not Path(generated).is_file():
+            messagebox.showinfo("Görsel yok","Seçili sahnede karşılaştırılacak bir görsel bulunamadı.")
+            return
+        character=self.project.get("characters",[])[selected[0]]
+        refs=[character.get("image","")]+list(character.get("reference_images",[]))
+        refs=[p for p in refs if p and Path(p).is_file()]
+        if not refs:
+            messagebox.showinfo("Referans yok","Bu karakter için önce referans fotoğrafı ekle.")
+            return
+        win=tk.Toplevel(self.root); win.title("Karakter görsel kontrolü — "+character.get("name","Karakter"))
+        win.geometry("900x520")
+        body=ttk.Frame(win,padding=12); body.pack(fill="both",expand=True)
+        ttk.Label(body,text="Karakter referansı").grid(row=0,column=0,sticky="w",padx=8)
+        ttk.Label(body,text=f"Üretilen sahne {scene_index+1}").grid(row=0,column=1,sticky="w",padx=8)
+        left=ttk.Label(body,text="Referans yüklenemedi"); left.grid(row=1,column=0,sticky="nsew",padx=8,pady=8)
+        right=ttk.Label(body,text="Sahne görseli yüklenemedi"); right.grid(row=1,column=1,sticky="nsew",padx=8,pady=8)
+        body.columnconfigure(0,weight=1); body.columnconfigure(1,weight=1); body.rowconfigure(1,weight=1)
+        try:
+            ref=Image.open(refs[0]).convert("RGB"); ref.thumbnail((400,400),Image.Resampling.LANCZOS)
+            generated_im=Image.open(generated).convert("RGB"); generated_im.thumbnail((400,400),Image.Resampling.LANCZOS)
+            left_photo=ImageTk.PhotoImage(ref); right_photo=ImageTk.PhotoImage(generated_im)
+            left.configure(image=left_photo,text=""); right.configure(image=right_photo,text="")
+            win._character_compare_photos=(left_photo,right_photo)
+        except Exception as exc:
+            messagebox.showerror("Karşılaştırma açılamadı",str(exc)); win.destroy(); return
+        ttk.Label(body,text="Bu ekran yan yana görsel inceleme içindir; otomatik yüz tanıma veya benzerlik puanı üretmez.").grid(row=2,column=0,columnspan=2,sticky="w",padx=8,pady=6)
 
     def refresh_character_references_label(self):
         refs=getattr(self,"character_reference_images",[])
