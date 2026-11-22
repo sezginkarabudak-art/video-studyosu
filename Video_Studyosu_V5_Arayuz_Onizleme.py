@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.3.4 - Görsel Stüdyo"
-APP_VERSION = "5.3.4"
+APP_NAME = "Video Studyosu V5.3.5 - Görsel Stüdyo"
+APP_VERSION = "5.3.5"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -312,7 +312,12 @@ def translate_caption(text, target_code):
     except Exception:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "deep-translator"])
         from deep_translator import GoogleTranslator
-    return GoogleTranslator(source="auto", target=target_code).translate(text)
+    try:
+        translated = GoogleTranslator(source="auto", target=target_code).translate(text)
+        return translated or text
+    except Exception:
+        # Ceviri servisi erisilemezse video uretimini durdurma.
+        return text
 
 def add_subtitle_to_image(image_path, subtitle, target_path):
     im = Image.open(image_path).convert("RGBA")
@@ -1403,7 +1408,14 @@ class VideoStudio:
                         vol=max(-50,min(50,int(self.project.get("voice_volume",100))-100))
                         communicate=edge_tts.Communicate(scene["text"],self.project.get("voice","tr-TR-AhmetNeural"),rate=rate_str,pitch=pitch_str,volume=f"{vol:+d}%")
                         import asyncio
-                        asyncio.run(communicate.save(a))
+                        try:
+                            asyncio.run(communicate.save(a))
+                        except Exception as tts_error:
+                            # Ses servisi gecici olarak erisilemezse sessiz ses parcasi uret;
+                            # video montaji tamamen durmasin.
+                            self._ui_status(f"{idx+1}/{len(self.project['scenes'])}: Ses servisine ulasilamadi; sessiz parca hazirlaniyor...")
+                            silence_duration=max(4,len(scene["text"])/13)
+                            run_ffmpeg(["-f","lavfi","-i","anullsrc=r=44100:cl=stereo","-t",str(silence_duration),"-q:a","9","-acodec","libmp3lame",a])
                     probe=subprocess.run([ffmpeg(),"-i",a],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
                     m=re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)",probe.stderr)
                     dur=(int(m.group(1))*3600+int(m.group(2))*60+float(m.group(3))) if m else max(4,len(scene["text"])/13)
