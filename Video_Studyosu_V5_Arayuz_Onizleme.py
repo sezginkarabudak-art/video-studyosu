@@ -2066,7 +2066,7 @@ class VideoStudio:
                             +camera_cues+scene.get("text","")+" "+character_cues+" "+continuity_cues).strip()
                     seed=int(hashlib.sha256((str(index)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
                     refs=collect_character_reference_images(scene,characters)
-                    self.root.after(0,lambda n=index+1,total=len(scenes:self.comfy_status.config(text=f"AI görseli üretiliyor: {n}/{total}"))
+                    self.root.after(0,lambda n=index+1,total=len(scenes):self.comfy_status.config(text=f"AI görseli üretiliyor: {n}/{total}"))
                     result=comfyui_generate_image(base_url,workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
                     results.append((index,result))
                 self.root.after(0,lambda r=results:self._comfy_all_done(r,None))
