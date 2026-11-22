@@ -205,11 +205,21 @@ def draw_scene_subjects(draw, text, w, h, kind, seed):
         for j in range(12):
             y=int(h*(.58+j*.025)); ln([(rng.randint(0,w//3),y),(rng.randint(w//2,w),y)],(130,180,195,100),2)
     elif any(k in t for k in ["koş","kaç","geldi","gördü","bekliy","yaklaştı","adam","kadın","çocuk","insan"]):
-        cx,cy=int(w*.52),int(h*.68); rr=int(min(w,h)*.045)
-        draw.ellipse((cx-rr,cy-3*rr,cx+rr,cy-rr),fill=(2,4,8,250))
-        draw.polygon([(cx-rr,cy-rr),(cx+rr,cy-rr),(cx+2*rr,cy+2*rr),(cx-2*rr,cy+2*rr)],fill=(2,4,8,250))
-        ln([(cx-rr,cy+rr),(cx-3*rr,cy+3*rr)],(2,4,8,255),max(5,rr//2))
-        ln([(cx+rr,cy+rr),(cx+3*rr,cy+3*rr)],(2,4,8,255),max(5,rr//2))
+        # Layered figure: cast shadow, body, head, clothing highlights and ground contact.
+        cx,cy=int(w*.52),int(h*.72); rr=int(min(w,h)*.052)
+        draw.ellipse((cx-int(rr*1.8),cy+int(rr*1.8),cx+int(rr*1.8),cy+int(rr*2.5)),fill=(0,0,0,105))
+        coat=(17,22,29,250) if kind=="horror" else (34,42,48,245)
+        draw.ellipse((cx-rr,cy-4*rr,cx+rr,cy-2*rr),fill=(8,10,14,255))
+        draw.rounded_rectangle((cx-int(rr*1.35),cy-2*rr,cx+int(rr*1.35),cy+int(rr*1.6)),radius=max(5,rr//2),fill=coat,outline=(120,125,125,100),width=max(1,rr//10))
+        # Neck and collar catch a little scene light.
+        draw.rectangle((cx-int(rr*.35),cy-2*rr,cx+int(rr*.35),cy-int(rr*1.55)),fill=(105,83,69,230))
+        draw.polygon([(cx-int(rr*.7),cy-2*rr),(cx,cy-int(rr*1.25)),(cx+int(rr*.7),cy-2*rr)],fill=(165,155,140,175))
+        # Arms and legs are separate shapes to give the silhouette a readable pose.
+        ln([(cx-int(rr*1.1),cy-int(rr*1.2)),(cx-int(rr*2.0),cy+int(rr*.6))],coat,max(5,int(rr*.55)))
+        ln([(cx+int(rr*1.1),cy-int(rr*1.2)),(cx+int(rr*1.9),cy+int(rr*.35))],coat,max(5,int(rr*.55)))
+        ln([(cx-int(rr*.65),cy+int(rr*1.4)),(cx-int(rr*1.05),cy+int(rr*3.0))],(9,12,17,255),max(6,int(rr*.62)))
+        ln([(cx+int(rr*.65),cy+int(rr*1.4)),(cx+int(rr*1.25),cy+int(rr*2.9))],(9,12,17,255),max(6,int(rr*.62)))
+        draw.ellipse((cx-int(rr*.18),cy-int(rr*3.2),cx+int(rr*.18),cy-int(rr*2.95)),fill=(205,185,155,180))
 def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_text=True):
     """API'siz, Pillow tabanlı özgün atmosferik grafik kompozisyonu."""
     w,h=size
