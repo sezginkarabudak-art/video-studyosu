@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Karabudak Film Stüdyoları V5.4.4"
-APP_VERSION = "5.4.4"
+APP_NAME = "Karabudak Film Stüdyoları V5.4.5"
+APP_VERSION = "5.4.5"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -581,11 +581,13 @@ class VideoStudio:
 
 
     def _select_tab(self, index):
-        for w in self.root.winfo_children():
-            if isinstance(w, ttk.Notebook):
-                tabs=w.tabs()
-                if 0 <= index < len(tabs): w.select(tabs[index])
-                break
+        # Notebook, root'un doğrudan çocuğu değil shell çerçevesinin içindedir.
+        # Bu nedenle root.winfo_children() taraması sekmeyi bulamıyordu.
+        nb = getattr(self, "main_notebook", None)
+        if nb is not None and nb.winfo_exists():
+            tabs = nb.tabs()
+            if 0 <= index < len(tabs):
+                nb.select(tabs[index])
         if self.menu_popup is not None:
             try: self.menu_popup.destroy()
             except Exception: pass
