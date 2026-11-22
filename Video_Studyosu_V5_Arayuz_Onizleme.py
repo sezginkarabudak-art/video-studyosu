@@ -239,10 +239,9 @@ def create_default_comfyui_workflow(base_url, width=1024, height=1024):
     }
     if ipadapter_ready:
         workflow["8"]={"class_type":"IPAdapterUnifiedLoader","inputs":{"model":["1",0],"preset":"PLUS (high strength)"}}
-        workflow["9"]={"class_type":"IPAdapterAdvanced","inputs":{
+        workflow["9"]={"class_type":"IPAdapter","inputs":{
             "model":["8",0],"ipadapter":["8",1],"image":["10",0],"weight":0.85,
-            "weight_type":"linear","combine_embeds":"concat","start_at":0.0,"end_at":0.85,
-            "embeds_scaling":"V only"}}
+            "start_at":0.0,"end_at":0.85,"weight_type":"standard"}}
         workflow["5"]["inputs"]["model"]=["9",0]
     target=Path(tempfile.gettempdir())/"video_studyosu_auto_workflow.json"
     target.write_text(json.dumps(workflow,ensure_ascii=False,indent=2),encoding="utf-8")
