@@ -1,0 +1,4 @@
+# Optional AI image tools for Video Studyosu
+# Install only when you want AI background removal for character photos.
+# CPU mode works without an NVIDIA GPU; the first run downloads its segmentation model.
+rembg[cpu]
