@@ -1384,13 +1384,14 @@ class VideoStudio:
         ttk.Button(preview_top,text="Bu sahneyi ön izle",command=self.generate_visual).pack(side="left",padx=5)
         comfy_row=ttk.Frame(preview_box); comfy_row.pack(fill="x",pady=(6,2))
         ttk.Label(comfy_row,text="ComfyUI adresi").pack(side="left")
+        ttk.Button(comfy_row,text="Bağlantıyı/modeli kontrol et",command=self.check_comfyui_connection).pack(side="left",padx=4)
         self.comfy_url_var=tk.StringVar(value="http://127.0.0.1:8188")
         ttk.Entry(comfy_row,textvariable=self.comfy_url_var,width=25).pack(side="left",padx=5)
-        ttk.Button(comfy_row,text="API iş akışı JSON seç",command=self.choose_comfy_workflow).pack(side="left",padx=4)
+        ttk.Button(comfy_row,text="Gelişmiş: JSON iş akışı seç",command=self.choose_comfy_workflow).pack(side="left",padx=4)
         ttk.Button(comfy_row,text="ComfyUI ile AI görsel üret",command=self.generate_comfy_visual).pack(side="left",padx=4)
         ttk.Button(comfy_row,text="TÜM SAHNELERİ AI ÜRET",command=self.generate_all_comfy_visuals).pack(side="left",padx=4)
         self.comfy_workflow_var=tk.StringVar(value="")
-        self.comfy_status=ttk.Label(preview_box,text="ComfyUI: Bağlantı için yerel ComfyUI ve API iş akışı gerekir.",foreground="#777")
+        self.comfy_status=ttk.Label(preview_box,text="Otomatik mod: ComfyUI çalışıyorsa kurulu modeli kendisi bulur; JSON seçmek zorunlu değildir.",foreground="#777")
         self.comfy_status.pack(anchor="w")
         self.preview_label=ttk.Label(preview_box,text="Bir sahne seçip ön izleme oluştur.",anchor="center")
         self.preview_label.pack(fill="both",expand=True,pady=4)
@@ -2009,6 +2010,23 @@ class VideoStudio:
         p=filedialog.askopenfilename(filetypes=[("Ses dosyası","*.wav *.mp3 *.m4a *.aac *.ogg")])
         if p:
             self.project["music"]=p; self.music_label.config(text=Path(p).name)
+
+    def check_comfyui_connection(self):
+        base_url=self.comfy_url_var.get().strip()
+        self.comfy_status.config(text="ComfyUI bağlantısı ve model kontrol ediliyor...")
+        def worker():
+            try:
+                request=urllib.request.Request(base_url.rstrip("/")+"/models/checkpoints",headers={"User-Agent":"VideoStudyosu"})
+                with urllib.request.urlopen(request,timeout=10) as response:
+                    models=json.loads(response.read().decode("utf-8"))
+                if not models:
+                    raise RuntimeError("ComfyUI açık ancak checkpoint modeli bulunamadı.")
+                message=f"Bağlantı başarılı. {len(models)} model bulundu. İlk model: {models[0]}"
+                self.root.after(0,lambda:self.comfy_status.config(text=message))
+            except Exception as exc:
+                message=str(exc)
+                self.root.after(0,lambda:self.comfy_status.config(text="Görsel motoru hazır değil: "+message))
+        threading.Thread(target=worker,daemon=True).start()
 
     def choose_comfy_workflow(self):
         path=filedialog.askopenfilename(title="ComfyUI API iş akışını seç",filetypes=[("JSON iş akışı","*.json")])
