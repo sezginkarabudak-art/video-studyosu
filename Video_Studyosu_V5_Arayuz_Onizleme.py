@@ -260,7 +260,8 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
         od.rectangle((0,0,w,h),fill=(100,0,10,18))
     im=Image.alpha_composite(im.convert("RGBA"),overlay).convert("RGB")
     # Her sahneye metin tabanli ayri on plan kompozisyonu ekle.
-    draw_scene_subjects(ImageDraw.Draw(im, "RGBA"), text + " " + request, w, h, kind, seed)\n    # Optional original Turkish scene label; disabled during video rendering
+    draw_scene_subjects(ImageDraw.Draw(im, "RGBA"), text + " " + request, w, h, kind, seed)
+    # Optional original Turkish scene label; disabled during video rendering
     # because the selected subtitle language is composited separately.
     if draw_text:
         d=ImageDraw.Draw(im,"RGBA")
