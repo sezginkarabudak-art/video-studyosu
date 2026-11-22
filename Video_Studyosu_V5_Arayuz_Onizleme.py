@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.3 - Görsel Stüdyo"
-APP_VERSION = "5.3.0"
+APP_NAME = "Video Studyosu V5.3.1 - Görsel Stüdyo"
+APP_VERSION = "5.3.1"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -412,9 +412,15 @@ class VideoStudio:
         style.configure("TProgressbar",background="#eeeeee",troughcolor=panel,bordercolor=line)
         style.configure("TSeparator",background=line)
         top=ttk.Frame(self.root,padding=10); top.pack(fill="x")
-        ttk.Label(top,text="VIDEO STUDYOSU V5.3",font=("Segoe UI",18,"bold")).pack(side="left")
+        ttk.Label(top,text="VIDEO STUDYOSU V5.3.1",font=("Segoe UI",18,"bold")).pack(side="left")
         ttk.Label(top,text="Sahneye özel görseller • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
-        nb=ttk.Notebook(self.root); nb.pack(fill="both",expand=True,padx=10,pady=(0,10))
+        self.menu_button=ttk.Button(top,text="☰  MENÜ",command=self.toggle_menu)
+        self.menu_button.pack(side="right")
+        try: style.layout("Hidden.TNotebook.Tab", [])
+        except Exception: pass
+        style.configure("Hidden.TNotebook",background=bg,borderwidth=0)
+        nb=ttk.Notebook(self.root,style="Hidden.TNotebook"); nb.pack(fill="both",expand=True,padx=10,pady=(0,10))
+        self.menu_popup=None
         self.editor=ttk.Frame(nb,padding=10); nb.add(self.editor,text="Video düzenleme / sahneler")
         self.library=ttk.Frame(nb,padding=10); nb.add(self.library,text="Video kütüphanem")
         self.characters_tab=ttk.Frame(nb,padding=10); nb.add(self.characters_tab,text="Karakter stüdyosu")
@@ -424,6 +430,7 @@ class VideoStudio:
         self.old_edit_tab=ttk.Frame(nb,padding=18); nb.add(self.old_edit_tab,text="Eski Videoyu Düzenle")
         self.build_home_tab(); self.build_editor(); self.build_library(); self.build_characters(); self.build_writer(); self.build_update_tab(); self.build_old_edit_tab()
         self._apply_dark_widgets(self.root)
+        nb.select(self.home_tab)
 
     def _apply_dark_widgets(self, parent):
         for child in parent.winfo_children():
@@ -453,14 +460,47 @@ class VideoStudio:
             ttk.Button(card,text="Bölümü aç",command=lambda i=tab:self._select_tab(i)).pack(anchor="w")
         ttk.Label(self.home_tab,text="Kayıtlı projeler ve videolar bilgisayarında saklanır. Senarist ayrı bir sekmedir.",foreground="#666").pack(anchor="w",pady=10)
 
-    def _select_tab(self, index):
-        try: self.root.nametowidget(self.root.winfo_children()[1].winfo_children()[0])
+    def toggle_menu(self):
+        if self.menu_popup is not None and self.menu_popup.winfo_exists():
+            self.menu_popup.destroy()
+            self.menu_popup=None
+            return
+        win=tk.Toplevel(self.root)
+        self.menu_popup=win
+        win.title("Video Studyosu Menü")
+        win.transient(self.root)
+        win.resizable(False,False)
+        win.configure(bg="#ffffff")
+        frame=ttk.Frame(win,padding=12)
+        frame.pack(fill="both",expand=True)
+        ttk.Label(frame,text="BÖLÜMLER",font=("Segoe UI",11,"bold")).pack(anchor="w",pady=(0,8))
+        items=[("Başlangıç",0),("Video düzenleme / sahneler",1),("Video kütüphanem",2),("Karakter stüdyosu",3),("Senarist",4),("Güncelleme",5),("Eski Videoyu Düzenle",6)]
+        for label,index in items:
+            ttk.Button(frame,text=label,command=lambda i=index:self._select_tab(i)).pack(fill="x",pady=3)
+        win.update_idletasks()
+        x=self.root.winfo_rootx()+self.root.winfo_width()-win.winfo_width()-18
+        y=self.root.winfo_rooty()+58
+        win.geometry(f"+{max(0,x)}+{max(0,y)}")
+        win.bind("<FocusOut>",lambda e: self.root.after(180, self._close_menu_if_unfocused))
+        win.focus_force()
+
+    def _close_menu_if_unfocused(self):
+        try:
+            if self.menu_popup is not None and self.menu_popup.winfo_exists() and self.root.focus_get() is not self.menu_popup:
+                self.menu_popup.destroy()
+                self.menu_popup=None
         except Exception: pass
-        # Select notebook tab by its visible label
+
+    def _select_tab(self, index):
         for w in self.root.winfo_children():
             if isinstance(w, ttk.Notebook):
-                if index < len(w.tabs()): w.select(w.tabs()[index])
+                tabs=w.tabs()
+                if 0 <= index < len(tabs): w.select(tabs[index])
                 break
+        if self.menu_popup is not None:
+            try: self.menu_popup.destroy()
+            except Exception: pass
+            self.menu_popup=None
 
     def start_wizard(self):
         self.wizard_data={"platform":"YouTube yatay video","character":"Karakter kullanma","voice":"Erkek — Ahmet","caption":"Türkçe altyazı","script":""}
