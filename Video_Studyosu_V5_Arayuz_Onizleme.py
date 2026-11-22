@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.1 - Otomatik Güncelleme"
-APP_VERSION = "5.1.0"
+APP_NAME = "Video Studyosu V5.2 - Siyah Beyaz"
+APP_VERSION = "5.2.0"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -329,9 +329,32 @@ class VideoStudio:
         style=ttk.Style()
         try: style.theme_use("clam")
         except: pass
+        bg="#101010"; panel="#1b1b1b"; fg="#f5f5f5"; muted="#bdbdbd"; line="#3a3a3a"
+        self.root.configure(bg=bg)
+        style.configure(".",background=bg,foreground=fg,fieldbackground=panel,bordercolor=line,lightcolor=line,darkcolor=line,focuscolor=fg)
+        style.configure("TFrame",background=bg)
+        style.configure("TLabel",background=bg,foreground=fg)
+        style.configure("TLabelframe",background=bg,foreground=fg,bordercolor=line)
+        style.configure("TLabelframe.Label",background=bg,foreground=fg)
+        style.configure("TButton",background="#292929",foreground=fg,bordercolor="#555555",padding=(10,6),focuscolor=fg)
+        style.map("TButton",background=[("active","#414141"),("pressed","#555555"),("disabled","#202020")],foreground=[("disabled","#888888")])
+        style.configure("TEntry",fieldbackground=panel,foreground=fg,insertcolor=fg)
+        style.configure("TCombobox",fieldbackground=panel,background="#292929",foreground=fg,arrowcolor=fg)
+        style.map("TCombobox",fieldbackground=[("readonly",panel)],foreground=[("readonly",fg)],selectbackground=[("readonly","#444444")],selectforeground=[("readonly",fg)])
+        style.configure("TRadiobutton",background=bg,foreground=fg)
+        style.map("TRadiobutton",background=[("active",bg)],foreground=[("active",fg)])
+        style.configure("TCheckbutton",background=bg,foreground=fg)
+        style.map("TCheckbutton",background=[("active",bg)],foreground=[("active",fg)])
+        style.configure("TNotebook",background=bg,bordercolor=line,tabmargins=(2,4,2,0))
+        style.configure("TNotebook.Tab",background="#242424",foreground=fg,padding=(12,7))
+        style.map("TNotebook.Tab",background=[("selected","#f0f0f0"),("active","#444444")],foreground=[("selected","#111111"),("active",fg)])
+        style.configure("Treeview",background=panel,fieldbackground=panel,foreground=fg)
+        style.map("Treeview",background=[("selected","#555555")],foreground=[("selected","#ffffff")])
+        style.configure("TProgressbar",background="#eeeeee",troughcolor=panel,bordercolor=line)
+        style.configure("TSeparator",background=line)
         top=ttk.Frame(self.root,padding=10); top.pack(fill="x")
-        ttk.Label(top,text="VIDEO STUDYOSU V5",font=("Segoe UI",18,"bold")).pack(side="left")
-        ttk.Label(top,text="API'siz görsel • Türkçe metin • Video kütüphanesi",foreground="#555").pack(side="left",padx=18)
+        ttk.Label(top,text="VIDEO STUDYOSU V5.2",font=("Segoe UI",18,"bold")).pack(side="left")
+        ttk.Label(top,text="API'siz görsel • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
         nb=ttk.Notebook(self.root); nb.pack(fill="both",expand=True,padx=10,pady=(0,10))
         self.editor=ttk.Frame(nb,padding=10); nb.add(self.editor,text="Video düzenleme / sahneler")
         self.library=ttk.Frame(nb,padding=10); nb.add(self.library,text="Video kütüphanem")
@@ -341,6 +364,21 @@ class VideoStudio:
         self.home_tab=ttk.Frame(nb,padding=22); nb.insert(0,self.home_tab,text="Başlangıç")
         self.old_edit_tab=ttk.Frame(nb,padding=18); nb.add(self.old_edit_tab,text="Eski Videoyu Düzenle")
         self.build_home_tab(); self.build_editor(); self.build_library(); self.build_characters(); self.build_writer(); self.build_update_tab(); self.build_old_edit_tab()
+        self._apply_dark_widgets(self.root)
+
+    def _apply_dark_widgets(self, parent):
+        for child in parent.winfo_children():
+            try:
+                if isinstance(child, (tk.Text, tk.Listbox)):
+                    child.configure(bg="#171717",fg="#f2f2f2",insertbackground="#ffffff",
+                                    selectbackground="#555555",selectforeground="#ffffff",
+                                    highlightbackground="#444444",highlightcolor="#ffffff",
+                                    relief="flat",bd=1)
+                elif isinstance(child, tk.Canvas):
+                    child.configure(bg="#101010",highlightthickness=0)
+            except Exception:
+                pass
+            self._apply_dark_widgets(child)
 
     def build_home_tab(self):
         ttk.Label(self.home_tab,text="Video Studyosu",font=("Segoe UI",25,"bold")).pack(anchor="w",pady=(10,4))
@@ -706,11 +744,25 @@ class VideoStudio:
         ttk.Button(actions,text="Fikri geliştir ve senaryo taslağı oluştur",command=self.generate_writer_draft).pack(side="left")
         ttk.Button(actions,text="Taslağı kaydet",command=self.save_writer_draft).pack(side="left",padx=6)
         ttk.Button(actions,text="Video oluşturma bölümüne aktar",command=self.send_writer_to_editor).pack(side="left")
+        ttk.Button(actions,text="Yeniden Başla",command=self.reset_writer).pack(side="right")
         ttk.Label(self.writer_tab,text="Senaryo taslağı — istediğin yeri doğrudan değiştirebilirsin",font=("Segoe UI",10,"bold")).pack(anchor="w")
         self.writer_output=tk.Text(self.writer_tab,wrap="word",font=("Consolas",10),undo=True)
         self.writer_output.pack(fill="both",expand=True,pady=5)
         self.writer_status=ttk.Label(self.writer_tab,text="Henüz taslak oluşturulmadı. Taslaklar senin kontrolündedir.",foreground="#555")
         self.writer_status.pack(anchor="w")
+
+    def reset_writer(self):
+        has_content = bool(self.writer_idea.get("1.0","end").strip() or self.writer_output.get("1.0","end").strip())
+        if has_content and not messagebox.askyesno("Senariste yeniden başla","Mevcut fikir ve taslak temizlensin mi? Kaydetmediğin metin kaybolur.",parent=self.root):
+            return
+        self.writer_idea.delete("1.0","end")
+        self.writer_output.delete("1.0","end")
+        self.writer_genre.set("Korku / gizem")
+        self.writer_hero.set("Murat")
+        self.writer_other.set("Ayşe")
+        self.writer_length.set("Kısa (5-7 sahne)")
+        self.writer_status.config(text="Yeni senaryo için hazırsın. Fikrini yazıp başlayabilirsin.")
+        self.writer_idea.focus_set()
 
     def generate_writer_draft(self):
         idea=self.writer_idea.get("1.0","end").strip()
