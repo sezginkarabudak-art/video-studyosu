@@ -72,7 +72,7 @@ try {
     Log "Applied: $rel"
   }
   Log ("PATCH SUCCESS: " + $manifest.from_version + " -> " + $manifest.to_version + "; files=" + $changed.Count)
-  Start-Process -FilePath $Target
+  if ($env:VIDEO_STUDYOSU_NO_LAUNCH -ne '1') { Start-Process -FilePath $Target }
   exit 0
 } catch {
   $failure = $_.Exception.Message
@@ -89,11 +89,13 @@ try {
     } catch { Log "ROLLBACK ERROR [$($entry.Relative)]: $($_.Exception.Message)" }
   }
   Log 'Rollback finished.'
-  try {
-    Add-Type -AssemblyName System.Windows.Forms
-    $nl = [Environment]::NewLine
-    $message = 'Yama uygulanamadi; eski dosyalar geri yuklendi.' + $nl + $nl + 'Hata: ' + $failure + $nl + $nl + 'Ayrinti: ' + $log
-    [System.Windows.Forms.MessageBox]::Show($message,'Video Studyosu guncelleme','OK','Error') | Out-Null
-  } catch { }
+  if ($env:VIDEO_STUDYOSU_NO_UI -ne '1') {
+    try {
+      Add-Type -AssemblyName System.Windows.Forms
+      $nl = [Environment]::NewLine
+      $message = 'Yama uygulanamadi; eski dosyalar geri yuklendi.' + $nl + $nl + 'Hata: ' + $failure + $nl + $nl + 'Ayrinti: ' + $log
+      [System.Windows.Forms.MessageBox]::Show($message,'Video Studyosu guncelleme','OK','Error') | Out-Null
+    } catch { }
+  }
   exit 1
 }

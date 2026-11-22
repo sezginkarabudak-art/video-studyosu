@@ -35,6 +35,11 @@ jobs:
         run: |
           if (!(Test-Path "Video_Studyosu_V5_Arayuz_Onizleme.py")) { throw "Ana program dosyasi depoda yok." }
           if (!(Test-Path "apply_patch.ps1")) { throw "Yama uygulama dosyasi depoda yok." }
+      - name: Windows updater smoke tests
+        shell: pwsh
+        run: |
+          if (!(Test-Path "tests/updater-smoke-test.ps1")) { throw "Updater smoke test dosyasi depoda yok." }
+          ./tests/updater-smoke-test.ps1
       - name: Build Windows app
         run: |
           pyinstaller --noconfirm --clean --onedir --windowed --name "Video Studyosu" --distpath dist --workpath build --specpath build --collect-all edge_tts --collect-all imageio_ffmpeg --hidden-import deep_translator --hidden-import PIL.ImageTk Video_Studyosu_V5_Arayuz_Onizleme.py
