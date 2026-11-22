@@ -3,7 +3,7 @@
 Video Studyosu V4 - API'siz görsel kompozisyon + video üretimi
 Not: Görseller, Pillow ile oluşturulan özgün grafik kompozisyonlardır; AI image generation değildir.
 """
-import os, sys, json, math, random, threading, subprocess, shutil, re, time, urllib.request, zipfile, tempfile
+import os, sys, json, math, random, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -88,8 +88,16 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
             if "height" in inputs: inputs["height"]=int(height)
     if not text_nodes:
         raise ValueError("İş akışında CLIPTextEncode metin düğümü bulunamadı. API formatında SD/SDXL iş akışı seç.")
-    # First text encoder is positive in the standard exported text-to-image graph.
-    text_nodes[0][1]["text"]=prompt_text
+    # Prefer the encoder connected to KSampler.positive; fall back to first encoder.
+    positive_ids=[]
+    for node in workflow.values():
+        if not isinstance(node,dict) or node.get("class_type") not in ("KSampler","KSamplerAdvanced"):
+            continue
+        positive=node.get("inputs",{}).get("positive")
+        if isinstance(positive,(list,tuple)) and positive:
+            positive_ids.append(str(positive[0]))
+    positive_node=next((item for item in text_nodes if item[0] in positive_ids),text_nodes[0])
+    positive_node[1]["text"]=prompt_text
     client_id="video-studyosu-"+str(random.randint(100000,999999999))
     payload=json.dumps({"prompt":workflow,"client_id":client_id}).encode("utf-8")
     request=urllib.request.Request(base_url+"/prompt",data=payload,headers={"Content-Type":"application/json"},method="POST")
