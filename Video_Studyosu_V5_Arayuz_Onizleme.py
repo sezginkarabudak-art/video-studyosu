@@ -66,7 +66,7 @@ def remove_image_background(source_path, output_path):
 
 
 def build_character_consistency_prompt(scene, characters):
-    """Build stable visual identity cues from the project's saved character bible."""
+    """Build stable identity and wardrobe-lock cues from the saved character bible."""
     ids=scene.get("character_ids")
     if not isinstance(ids,list):
         old=scene.get("character_id")
@@ -78,10 +78,13 @@ def build_character_consistency_prompt(scene, characters):
         item=characters[idx]
         name=(item.get("name") or "Character").strip()
         desc=(item.get("description") or "").strip()
-        if desc:
-            details.append(f"Keep the same recurring character identity for {name}: {desc}. Preserve facial features, hairstyle, age appearance, body type and clothing across scenes.")
-        else:
-            details.append(f"Keep the same recurring character identity and appearance for {name} as in the project's character reference.")
+        wardrobe=(item.get("wardrobe") or "").strip()
+        parts=[f"Recurring character {name}: {desc}" if desc else
+               f"Recurring character {name}, matching the supplied character reference exactly."]
+        if wardrobe:
+            parts.append(f"LOCKED COSTUME for {name}: {wardrobe}. Keep these exact clothes, colors, accessories and footwear in every scene. Do not redesign or randomly change the outfit.")
+        parts.append(f"Preserve {name}'s facial features, hairstyle, apparent age, skin tone and body proportions across all shots. Only change costume when the scene text explicitly describes a costume change.")
+        details.append(" ".join(parts))
     return " ".join(details)
 
 
@@ -1472,8 +1475,11 @@ class VideoStudio:
         right=ttk.Frame(body,padding=(18,0)); right.pack(side="left",fill="both",expand=True)
         ttk.Label(right,text="Karakter adı").pack(anchor="w")
         self.character_name=tk.StringVar(); ttk.Entry(right,textvariable=self.character_name,width=50).pack(fill="x",pady=(2,10))
-        ttk.Label(right,text="Karakter notu / görünüş tarifi").pack(anchor="w")
-        self.character_desc=tk.Text(right,height=6,wrap="word"); self.character_desc.pack(fill="x",pady=(2,10))
+        ttk.Label(right,text="Karakter notu / yüz ve fiziksel görünüş tarifi").pack(anchor="w")
+        self.character_desc=tk.Text(right,height=4,wrap="word"); self.character_desc.pack(fill="x",pady=(2,8))
+        ttk.Label(right,text="Sabit kıyafet / aksesuar (sahneler arasında korunur)").pack(anchor="w")
+        self.character_wardrobe=tk.Text(right,height=3,wrap="word")
+        self.character_wardrobe.pack(fill="x",pady=(2,10))
         self.character_image_label=ttk.Label(right,text="Referans fotoğrafı seçilmedi"); self.character_image_label.pack(anchor="w",pady=4)
         self.character_preview_label=ttk.Label(right,text="Karakter ön izlemesi",anchor="center"); self.character_preview_label.pack(fill="x",pady=6)
         self.character_preview_photo=None
@@ -1507,6 +1513,7 @@ class VideoStudio:
         c=self.project.get("characters",[])[sel[0]]
         self.character_name.set(c.get("name","")); self.character_image=c.get("image","")
         self.character_desc.delete("1.0","end"); self.character_desc.insert("1.0",c.get("description",""))
+        self.character_wardrobe.delete("1.0","end"); self.character_wardrobe.insert("1.0",c.get("wardrobe",""))
         self.character_image_label.config(text=Path(self.character_image).name if self.character_image else "Referans fotoğrafı seçilmedi")
         self.refresh_character_preview()
 
@@ -1557,8 +1564,9 @@ class VideoStudio:
         if not name:
             messagebox.showwarning("Karakter adı","Karaktere bir isim ver."); return
         desc=self.character_desc.get("1.0","end").strip()
+        wardrobe=self.character_wardrobe.get("1.0","end").strip()
         sel=self.character_list.curselection()
-        item={"name":name,"description":desc,"image":self.character_image}
+        item={"name":name,"description":desc,"wardrobe":wardrobe,"image":self.character_image}
         if sel:self.project["characters"][sel[0]]=item
         else:self.project.setdefault("characters",[]).append(item)
         self.refresh_characters(); self.character_list.selection_clear(0,"end"); self.character_list.selection_set(len(self.project["characters"])-1); self.refresh_character_preview(); self.set_status("Karakter kütüphaneye kaydedildi.")
