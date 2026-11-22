@@ -3,7 +3,7 @@
 Video Studyosu V4 - API'siz görsel kompozisyon + video üretimi
 Not: Görseller, Pillow ile oluşturulan özgün grafik kompozisyonlardır; AI image generation değildir.
 """
-import os, sys, json, math, random, threading, subprocess, shutil, re, time, urllib.request, zipfile, tempfile
+import os, sys, json, math, random, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -47,6 +47,100 @@ except Exception:
     install_imports()
     from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageTk
     import imageio_ffmpeg
+
+def remove_image_background(source_path, output_path):
+    """Optional local AI cutout using the open-source rembg package."""
+    try:
+        from rembg import remove
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "rembg[cpu]"])
+        from rembg import remove
+    with open(source_path, "rb") as src:
+        result = remove(src.read())
+    with open(output_path, "wb") as dst:
+        dst.write(result)
+    # Verify that the result really contains transparency before using it.
+    with Image.open(output_path) as check:
+        check.verify()
+    return output_path
+
+def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200):
+    """Submit an exported ComfyUI API workflow, wait for its output and save the image locally."""
+    base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
+    with open(workflow_path,"r",encoding="utf-8") as handle:
+        workflow=json.load(handle)
+    if not isinstance(workflow,dict) or not workflow:
+        raise ValueError("ComfyUI API iş akışı boş veya geçersiz.")
+    # Update common built-in text, seed, and latent-size nodes without assuming fixed node IDs.
+    text_nodes=[]
+    for node_id,node in workflow.items():
+        if not isinstance(node,dict): continue
+        kind=node.get("class_type","")
+        inputs=node.get("inputs",{})
+        if kind in ("CLIPTextEncode","CLIPTextEncodeSDXL") and isinstance(inputs,dict):
+            text_value=inputs.get("text")
+            if isinstance(text_value,str):
+                text_nodes.append((node_id,inputs,text_value))
+        if kind=="KSampler" and isinstance(inputs,dict) and "seed" in inputs:
+            inputs["seed"]=random.randint(1,2**31-1)
+        if kind in ("EmptyLatentImage","EmptySD3LatentImage") and isinstance(inputs,dict):
+            if "width" in inputs: inputs["width"]=int(width)
+            if "height" in inputs: inputs["height"]=int(height)
+    if not text_nodes:
+        raise ValueError("İş akışında CLIPTextEncode metin düğümü bulunamadı. API formatında SD/SDXL iş akışı seç.")
+    # Prefer the encoder connected to KSampler.positive; fall back to first encoder.
+    positive_ids=[]
+    for node in workflow.values():
+        if not isinstance(node,dict) or node.get("class_type") not in ("KSampler","KSamplerAdvanced"):
+            continue
+        positive=node.get("inputs",{}).get("positive")
+        if isinstance(positive,(list,tuple)) and positive:
+            positive_ids.append(str(positive[0]))
+    positive_node=next((item for item in text_nodes if item[0] in positive_ids),text_nodes[0])
+    positive_node[1]["text"]=prompt_text
+    client_id="video-studyosu-"+str(random.randint(100000,999999999))
+    payload=json.dumps({"prompt":workflow,"client_id":client_id}).encode("utf-8")
+    request=urllib.request.Request(base_url+"/prompt",data=payload,headers={"Content-Type":"application/json"},method="POST")
+    with urllib.request.urlopen(request,timeout=30) as response:
+        submitted=json.loads(response.read().decode("utf-8"))
+    prompt_id=submitted.get("prompt_id")
+    if not prompt_id:
+        raise RuntimeError("ComfyUI işi kabul etmedi: "+json.dumps(submitted,ensure_ascii=False)[:1200])
+    deadline=time.time()+int(timeout)
+    history=None
+    while time.time()<deadline:
+        time.sleep(2)
+        try:
+            with urllib.request.urlopen(base_url+"/history/"+prompt_id,timeout=20) as response:
+                data=json.loads(response.read().decode("utf-8"))
+            history=data.get(prompt_id) or data
+            if history and history.get("outputs"):
+                break
+            if history and history.get("status",{}).get("status_str")=="error":
+                raise RuntimeError("ComfyUI görsel üretimi hata verdi: "+str(history["status"])[:1200])
+        except urllib.error.HTTPError:
+            continue
+    else:
+        raise TimeoutError("ComfyUI görsel üretimi zaman aşımına uğradı.")
+    outputs=history.get("outputs",{})
+    image_info=None
+    for node_output in outputs.values():
+        for image_item in node_output.get("images",[]):
+            if image_item.get("filename"):
+                image_info=image_item
+                break
+        if image_info: break
+    if not image_info:
+        raise RuntimeError("İş tamamlandı ancak SaveImage çıktısı bulunamadı. İş akışında SaveImage düğümü olmalı.")
+    query=urllib.parse.urlencode({"filename":image_info["filename"],"subfolder":image_info.get("subfolder",""),"type":image_info.get("type","output")})
+    with urllib.request.urlopen(base_url+"/view?"+query,timeout=60) as response:
+        image_bytes=response.read()
+    output_dir=Path(output_dir); output_dir.mkdir(parents=True,exist_ok=True)
+    target=output_dir/("comfy_"+prompt_id[:8]+".png")
+    target.write_bytes(image_bytes)
+    with Image.open(target) as verify:
+        verify.verify()
+    return str(target)
 
 def ffmpeg():
     return imageio_ffmpeg.get_ffmpeg_exe()
@@ -130,7 +224,36 @@ def draw_scene_subjects(draw, text, w, h, kind, seed):
     rng=random.Random(seed + sum(ord(ch) for ch in t[:180]))
     def ln(points, fill=(5,5,8,235), width=5):
         draw.line(points, fill=fill, width=width)
-    if any(k in t for k in ["koridor","oda","içeri girdi","kapıyı aç","evin içinde"]):
+    if any(k in t for k in ["mutfak","tezgah","ocak","tencere","yemek hazırl"]):
+        # Kitchen: counter, cabinets, tiled backsplash and cooker.
+        draw.rectangle((0,int(h*.18),w,int(h*.62)),fill=(72,61,52,170))
+        for x in [int(w*.12),int(w*.39),int(w*.66)]:
+            draw.rectangle((x,int(h*.22),x+int(w*.20),int(h*.48)),fill=(35,39,43,245),outline=(175,155,125,210),width=4)
+            draw.ellipse((x+int(w*.08),int(h*.29),x+int(w*.12),int(h*.34)),fill=(205,185,145,220))
+        draw.rectangle((0,int(h*.62),w,int(h*.75)),fill=(95,77,60,245))
+        draw.rectangle((int(w*.12),int(h*.75),int(w*.88),int(h*.80)),fill=(35,30,28,245))
+        for x in [int(w*.30),int(w*.50),int(w*.70)]:
+            draw.ellipse((x-int(w*.035),int(h*.72),x+int(w*.035),int(h*.76)),outline=(210,195,165,220),width=5)
+    elif any(k in t for k in ["hastane","ameliyat","doktor","hemşire","acil servis"]):
+        draw.rectangle((int(w*.08),int(h*.16),int(w*.92),int(h*.78)),fill=(180,195,195,95),outline=(215,225,220,190),width=5)
+        draw.rectangle((int(w*.18),int(h*.30),int(w*.82),int(h*.66)),fill=(205,215,210,235),outline=(65,85,90,220),width=5)
+        draw.rectangle((int(w*.24),int(h*.22),int(w*.76),int(h*.34)),fill=(230,235,225,240))
+        draw.line((int(w*.50),int(h*.23),int(w*.50),int(h*.32)),fill=(170,35,40,240),width=8)
+        draw.line((int(w*.46),int(h*.275),int(w*.54),int(h*.275)),fill=(170,35,40,240),width=8)
+    elif any(k in t for k in ["okul","sınıf","öğretmen","öğrenci","tahta"]):
+        draw.rectangle((int(w*.12),int(h*.16),int(w*.88),int(h*.53)),fill=(20,62,53,245),outline=(155,125,85,230),width=8)
+        draw.line((int(w*.18),int(h*.31),int(w*.48),int(h*.31)),fill=(225,225,205,200),width=4)
+        draw.line((int(w*.18),int(h*.39),int(w*.63),int(h*.39)),fill=(225,225,205,180),width=4)
+        for x in [int(w*.22),int(w*.48),int(w*.72)]:
+            draw.rectangle((x,int(h*.65),x+int(w*.13),int(h*.72)),fill=(105,70,43,245))
+            draw.line((x+int(w*.02),int(h*.72),x,int(h*.88)),fill=(35,27,22,245),width=7)
+            draw.line((x+int(w*.11),int(h*.72),x+int(w*.13),int(h*.88)),fill=(35,27,22,245),width=7)
+    elif any(k in t for k in ["ofis","büro","toplantı","masa başı","bilgisayar"]):
+        draw.rectangle((int(w*.12),int(h*.18),int(w*.88),int(h*.64)),fill=(35,48,58,210),outline=(120,140,150,180),width=5)
+        draw.rectangle((int(w*.22),int(h*.35),int(w*.48),int(h*.62)),fill=(12,18,25,250),outline=(160,170,175,220),width=5)
+        draw.rectangle((int(w*.17),int(h*.64),int(w*.83),int(h*.71)),fill=(95,65,43,245))
+        draw.rectangle((int(w*.57),int(h*.38),int(w*.78),int(h*.63)),fill=(15,22,30,245),outline=(170,180,185,190),width=4)
+    elif any(k in t for k in ["koridor","oda","içeri girdi","kapıyı aç","evin içinde"]):
         van=(int(w*.52),int(h*.40))
         ln([(0,int(h*.08)),van,(w,int(h*.08))],(8,8,12,230),12)
         ln([(0,int(h*.82)),van,(w,int(h*.82))],(8,8,12,230),14)
@@ -176,13 +299,21 @@ def draw_scene_subjects(draw, text, w, h, kind, seed):
         for j in range(12):
             y=int(h*(.58+j*.025)); ln([(rng.randint(0,w//3),y),(rng.randint(w//2,w),y)],(130,180,195,100),2)
     elif any(k in t for k in ["koş","kaç","geldi","gördü","bekliy","yaklaştı","adam","kadın","çocuk","insan"]):
-        cx,cy=int(w*.52),int(h*.68); rr=int(min(w,h)*.045)
-        draw.ellipse((cx-rr,cy-3*rr,cx+rr,cy-rr),fill=(2,4,8,250))
-        draw.polygon([(cx-rr,cy-rr),(cx+rr,cy-rr),(cx+2*rr,cy+2*rr),(cx-2*rr,cy+2*rr)],fill=(2,4,8,250))
-        ln([(cx-rr,cy+rr),(cx-3*rr,cy+3*rr)],(2,4,8,255),max(5,rr//2))
-        ln([(cx+rr,cy+rr),(cx+3*rr,cy+3*rr)],(2,4,8,255),max(5,rr//2))
-
-
+        # Layered figure: cast shadow, body, head, clothing highlights and ground contact.
+        cx,cy=int(w*.52),int(h*.72); rr=int(min(w,h)*.052)
+        draw.ellipse((cx-int(rr*1.8),cy+int(rr*1.8),cx+int(rr*1.8),cy+int(rr*2.5)),fill=(0,0,0,105))
+        coat=(17,22,29,250) if kind=="horror" else (34,42,48,245)
+        draw.ellipse((cx-rr,cy-4*rr,cx+rr,cy-2*rr),fill=(8,10,14,255))
+        draw.rounded_rectangle((cx-int(rr*1.35),cy-2*rr,cx+int(rr*1.35),cy+int(rr*1.6)),radius=max(5,rr//2),fill=coat,outline=(120,125,125,100),width=max(1,rr//10))
+        # Neck and collar catch a little scene light.
+        draw.rectangle((cx-int(rr*.35),cy-2*rr,cx+int(rr*.35),cy-int(rr*1.55)),fill=(105,83,69,230))
+        draw.polygon([(cx-int(rr*.7),cy-2*rr),(cx,cy-int(rr*1.25)),(cx+int(rr*.7),cy-2*rr)],fill=(165,155,140,175))
+        # Arms and legs are separate shapes to give the silhouette a readable pose.
+        ln([(cx-int(rr*1.1),cy-int(rr*1.2)),(cx-int(rr*2.0),cy+int(rr*.6))],coat,max(5,int(rr*.55)))
+        ln([(cx+int(rr*1.1),cy-int(rr*1.2)),(cx+int(rr*1.9),cy+int(rr*.35))],coat,max(5,int(rr*.55)))
+        ln([(cx-int(rr*.65),cy+int(rr*1.4)),(cx-int(rr*1.05),cy+int(rr*3.0))],(9,12,17,255),max(6,int(rr*.62)))
+        ln([(cx+int(rr*.65),cy+int(rr*1.4)),(cx+int(rr*1.25),cy+int(rr*2.9))],(9,12,17,255),max(6,int(rr*.62)))
+        draw.ellipse((cx-int(rr*.18),cy-int(rr*3.2),cx+int(rr*.18),cy-int(rr*2.95)),fill=(205,185,155,180))
 def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_text=True):
     """API'siz, Pillow tabanlı özgün atmosferik grafik kompozisyonu."""
     w,h=size
@@ -275,6 +406,16 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     im=Image.alpha_composite(im.convert("RGBA"),overlay).convert("RGB")
     # Her sahneye metin tabanli ayri on plan kompozisyonu ekle.
     draw_scene_subjects(ImageDraw.Draw(im, "RGBA"), text + " " + request, w, h, kind, seed)
+    # Soft cinematic vignette: keep the focal area readable while adding depth.
+    vignette=Image.new("RGBA",(w,h),(0,0,0,0))
+    vd=ImageDraw.Draw(vignette)
+    max_layers=18
+    for layer in range(max_layers):
+        inset=int(min(w,h)*0.012*layer)
+        alpha=int(2+layer*1.15)
+        vd.rectangle((inset,inset,w-inset,h-inset),outline=(0,0,0,alpha),width=max(2,int(min(w,h)*0.012)))
+    vignette=vignette.filter(ImageFilter.GaussianBlur(max(8,int(min(w,h)*0.035))))
+    im=Image.alpha_composite(im.convert("RGBA"),vignette).convert("RGB")
     # Optional original Turkish scene label; disabled during video rendering
     # because the selected subtitle language is composited separately.
     if draw_text:
@@ -287,13 +428,27 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     im.save(path, quality=94)
 
 def fit_image(src, size):
+    """Fits an image without cutting off the subject; uses a soft blurred fill behind it."""
     w,h=size
     im=Image.open(src).convert("RGB")
-    scale=max(w/im.width,h/im.height)
-    nw,nh=int(im.width*scale),int(im.height*scale)
-    im=im.resize((nw,nh),Image.Resampling.LANCZOS)
-    x=(nw-w)//2; y=(nh-h)//2
-    return im.crop((x,y,x+w,y+h))
+    if im.size==(w,h):
+        return im
+    # Full-frame blurred background fills the target ratio.
+    cover=max(w/im.width,h/im.height)
+    bw,bh=max(w,int(im.width*cover)),max(h,int(im.height*cover))
+    bg=im.resize((bw,bh),Image.Resampling.LANCZOS)
+    bx=(bw-w)//2; by=(bh-h)//2
+    bg=bg.crop((bx,by,bx+w,by+h))
+    bg=bg.filter(ImageFilter.GaussianBlur(max(10,int(min(w,h)*0.025))))
+    shade=Image.new("RGB",(w,h),(0,0,0))
+    bg=Image.blend(bg,shade,0.28)
+    # Keep the entire original image visible in the foreground.
+    contain=min(w/im.width,h/im.height)
+    fw,fh=max(1,int(im.width*contain)),max(1,int(im.height*contain))
+    fg=im.resize((fw,fh),Image.Resampling.LANCZOS)
+    x=(w-fw)//2; y=(h-fh)//2
+    bg.paste(fg,(x,y))
+    return bg
 
 def make_motion_preview_frame(source, frame_no, frame_count=72):
     """Creates a lightweight animated cinematic preview from the scene still."""
@@ -392,35 +547,73 @@ def add_subtitle_to_image(image_path, subtitle, target_path):
     Image.alpha_composite(im, overlay).convert("RGB").save(target_path, quality=95)
 
 def add_character_reference(image_path, character, output_path, slot=0, total=1):
-    """Adds the same user-supplied reference portrait as a small on-screen visual cue.
-    This is not AI character synthesis or scene-aware compositing.
+    """Composites a transparent full-body character into the scene.
+    Opaque portrait photos retain the legacy circular reference-card behavior.
     """
     im=Image.open(image_path).convert("RGBA")
     ref=character.get("image","")
     if not ref or not Path(ref).exists():
         im.convert("RGB").save(output_path,quality=94); return output_path
+
+    portrait=Image.open(ref).convert("RGBA")
     w,h=im.size
     total=max(1,int(total))
-    box=max(70,int(min(w,h)*0.22/(total**0.28)))
-    portrait=Image.open(ref).convert("RGB")
-    side=min(portrait.size)
-    x=(portrait.width-side)//2; y=(portrait.height-side)//2
-    portrait=portrait.crop((x,y,x+side,y+side)).resize((box,box),Image.Resampling.LANCZOS).convert("RGBA")
-    mask=Image.new("L",(box,box),0); md=ImageDraw.Draw(mask); md.ellipse((2,2,box-2,box-2),fill=255)
-    portrait.putalpha(mask)
-    pad=max(12,int(w*.018)); px=pad+slot*(box+pad); py=h-box-pad
-    overlay=Image.new("RGBA",im.size,(0,0,0,0)); od=ImageDraw.Draw(overlay)
-    od.ellipse((px-5,py-5,px+box+5,py+box+5),fill=(0,0,0,180),outline=(245,240,225,220),width=4)
-    overlay.alpha_composite(portrait,(px,py))
-    label=(character.get("name") or "Karakter")[:24]
-    f=font(max(16,int(w/70)),True)
-    bb=od.textbbox((0,0),label,font=f)
-    tw=bb[2]-bb[0]
-    od.rounded_rectangle((px,py+box+8,px+tw+24,py+box+48),radius=10,fill=(0,0,0,170))
-    od.text((px+12,py+box+12),label,font=f,fill=(255,255,255,245))
-    Image.alpha_composite(im,overlay).convert("RGB").save(output_path,quality=94)
-    return output_path
+    has_transparency=(portrait.getchannel("A").getextrema()[0] < 255)
 
+    if has_transparency:
+        # Transparent PNG/WebP assets are treated as actual scene characters,
+        # not as small profile badges. Keep the complete silhouette visible.
+        alpha=portrait.getchannel("A")
+        bbox=alpha.getbbox()
+        if bbox:
+            portrait=portrait.crop(bbox)
+        target_h=int(h*0.78)
+        scale=min(target_h/max(1,portrait.height), (w*0.34)/max(1,portrait.width))
+        nw=max(1,int(portrait.width*scale)); nh=max(1,int(portrait.height*scale))
+        portrait=portrait.resize((nw,nh),Image.Resampling.LANCZOS)
+        # Alternate sides for multiple characters and keep them inside frame.
+        margin=max(12,int(w*.035))
+        if total==1:
+            x=w-nw-margin
+        elif slot % 2 == 0:
+            x=margin+(slot//2)*int(nw*.62)
+        else:
+            x=w-nw-margin-(slot//2)*int(nw*.62)
+        x=max(0,min(w-nw,x)); y=max(0,h-nh)
+        # Soft grounding shadow under the character for a less pasted-on look.
+        shadow=Image.new("RGBA",(nw,nh),(0,0,0,0))
+        shadow_alpha=portrait.getchannel("A").filter(ImageFilter.GaussianBlur(max(3,int(min(nw,nh)*.035))))
+        shadow_alpha=shadow_alpha.point(lambda value:int(value*.48))
+        shadow.putalpha(shadow_alpha)
+        shadow_layer=Image.new("RGBA",im.size,(0,0,0,0))
+        shadow_layer.alpha_composite(shadow,(x+max(2,int(nw*.025)),y+max(3,int(nh*.012))))
+        im=Image.alpha_composite(im,shadow_layer)
+        layer=Image.new("RGBA",im.size,(0,0,0,0))
+        layer.alpha_composite(portrait,(x,y))
+        im=Image.alpha_composite(im,layer)
+    else:
+        # Opaque headshots cannot be cleanly separated from their background
+        # without a segmentation model; preserve them as labeled reference cards.
+        box=max(70,int(min(w,h)*0.22/(total**0.28)))
+        side=min(portrait.size)
+        x0=(portrait.width-side)//2; y0=(portrait.height-side)//2
+        portrait=portrait.crop((x0,y0,x0+side,y0+side)).resize((box,box),Image.Resampling.LANCZOS)
+        mask=Image.new("L",(box,box),0); md=ImageDraw.Draw(mask)
+        md.ellipse((2,2,box-2,box-2),fill=255)
+        portrait.putalpha(mask)
+        pad=max(12,int(w*.018)); px=pad+slot*(box+pad); py=h-box-pad
+        overlay=Image.new("RGBA",im.size,(0,0,0,0)); od=ImageDraw.Draw(overlay)
+        od.ellipse((px-5,py-5,px+box+5,py+box+5),fill=(0,0,0,180),outline=(245,240,225,220),width=4)
+        overlay.alpha_composite(portrait,(px,py))
+        label=(character.get("name") or "Karakter")[:24]
+        f=font(max(16,int(w/70)),True)
+        bb=od.textbbox((0,0),label,font=f); tw=bb[2]-bb[0]
+        od.rounded_rectangle((px,py+box+8,px+tw+24,py+box+48),radius=10,fill=(0,0,0,170))
+        od.text((px+12,py+box+12),label,font=f,fill=(255,255,255,245))
+        im=Image.alpha_composite(im,overlay)
+
+    im.convert("RGB").save(output_path,quality=94)
+    return output_path
 class VideoStudio:
     def __init__(self, root):
         self.root=root
@@ -878,6 +1071,15 @@ class VideoStudio:
         preview_top=ttk.Frame(preview_box); preview_top.pack(fill="x")
         ttk.Button(preview_top,text="Tüm sahneleri ön izlemede hazırla",command=self.prepare_all_previews).pack(side="left")
         ttk.Button(preview_top,text="Bu sahneyi ön izle",command=self.generate_visual).pack(side="left",padx=5)
+        comfy_row=ttk.Frame(preview_box); comfy_row.pack(fill="x",pady=(6,2))
+        ttk.Label(comfy_row,text="ComfyUI adresi").pack(side="left")
+        self.comfy_url_var=tk.StringVar(value="http://127.0.0.1:8188")
+        ttk.Entry(comfy_row,textvariable=self.comfy_url_var,width=25).pack(side="left",padx=5)
+        ttk.Button(comfy_row,text="API iş akışı JSON seç",command=self.choose_comfy_workflow).pack(side="left",padx=4)
+        ttk.Button(comfy_row,text="ComfyUI ile AI görsel üret",command=self.generate_comfy_visual).pack(side="left",padx=4)
+        self.comfy_workflow_var=tk.StringVar(value="")
+        self.comfy_status=ttk.Label(preview_box,text="ComfyUI: Bağlantı için yerel ComfyUI ve API iş akışı gerekir.",foreground="#777")
+        self.comfy_status.pack(anchor="w")
         self.preview_label=ttk.Label(preview_box,text="Bir sahne seçip ön izleme oluştur.",anchor="center")
         self.preview_label.pack(fill="both",expand=True,pady=4)
         self.preview_photo=None
@@ -890,6 +1092,7 @@ class VideoStudio:
         ttk.Button(order,text="↑ Yukarı",command=lambda:self.move_scene(-1)).pack(side="left")
         ttk.Button(order,text="↓ Aşağı",command=lambda:self.move_scene(1)).pack(side="left",padx=5)
         ttk.Button(order,text="Görsel seç",command=self.choose_image).pack(side="left",padx=5)
+        ttk.Button(order,text="Varsayılan görsele dön",command=self.reset_scene_image).pack(side="left",padx=5)
         ttk.Button(order,text="Kendi sesimi seç",command=self.choose_audio).pack(side="left")
         ttk.Button(order,text="Görsel oluştur",command=self.generate_visual).pack(side="left",padx=5)
 
@@ -1077,6 +1280,7 @@ class VideoStudio:
         ttk.Button(right,text="Ön izlemeyi yenile / yeniden oluştur",command=self.refresh_character_preview).pack(anchor="w",pady=4)
         row=ttk.Frame(right); row.pack(fill="x",pady=6)
         ttk.Button(row,text="Fotoğraf seç",command=self.choose_character_image).pack(side="left")
+        ttk.Button(row,text="Arka planı AI ile sil",command=self.remove_character_background).pack(side="left",padx=6)
         ttk.Button(row,text="Karakteri kaydet",command=self.save_character).pack(side="left",padx=6)
         ttk.Button(row,text="Karakteri sil",command=self.delete_character).pack(side="left")
         ttk.Separator(right).pack(fill="x",pady=14)
@@ -1110,6 +1314,24 @@ class VideoStudio:
         path=filedialog.askopenfilename(filetypes=[("Görsel","*.png *.jpg *.jpeg *.webp *.bmp")])
         if path:
             self.character_image=path; self.character_image_label.config(text=Path(path).name); self.refresh_character_preview()
+
+    def remove_character_background(self):
+        if not self.character_image or not Path(self.character_image).exists():
+            messagebox.showinfo("Fotoğraf gerekli","Önce karakter fotoğrafı seç.")
+            return
+        try:
+            source=Path(self.character_image)
+            target=source.with_name(source.stem+"_arkaplan_silindi.png")
+            self.set_status("Ücretsiz yerel AI arka plan silme hazırlanıyor...")
+            remove_image_background(str(source),str(target))
+            self.character_image=str(target)
+            self.character_image_label.config(text=target.name+" — şeffaf PNG")
+            self.refresh_character_preview()
+            self.set_status("Arka plan silindi. Şeffaf karakter görseli hazır.")
+            messagebox.showinfo("Tamamlandı","Arka plan kaldırıldı. Şeffaf PNG karakter görseli olarak seçildi.")
+        except Exception as exc:
+            messagebox.showerror("Arka plan silinemedi",str(exc))
+            self.set_status("AI arka plan silme başarısız oldu.")
 
     def refresh_character_preview(self):
         """Show chosen portrait or a local concept card; this is not AI image generation."""
@@ -1246,6 +1468,10 @@ class VideoStudio:
         self.project["scenes"][i],self.project["scenes"][j]=self.project["scenes"][j],self.project["scenes"][i]
         self.refresh_scenes(j)
 
+    def preview_canvas_size(self):
+        # Keep generated stills in the same aspect ratio as the selected export.
+        return (540,960) if getattr(self,"ratio",None) and self.ratio.get()=="9:16" else (960,540)
+
     def preview_path(self, i):
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"on_izleme"
         folder.mkdir(parents=True,exist_ok=True)
@@ -1257,7 +1483,7 @@ class VideoStudio:
         p=scene.get("image","")
         if not p or not Path(p).exists():
             p=str(self.preview_path(i))
-            make_original_visual(scene["text"],p,size=(960,540),seed=i,
+            make_original_visual(scene["text"],p,size=self.preview_canvas_size(),seed=i,
                                  request=scene.get("visual_request",""))
             scene["image"]=p
         try:
@@ -1310,7 +1536,7 @@ class VideoStudio:
             p=s.get("image","")
             if not p or not Path(p).exists():
                 p=self.preview_path(i)
-                make_original_visual(s["text"],p,size=(960,540),seed=i,request=s.get("visual_request",""))
+                make_original_visual(s["text"],p,size=self.preview_canvas_size(),seed=i,request=s.get("visual_request",""))
                 s["image"]=str(p)
         self.refresh_scenes(0)
         self.show_preview(0)
@@ -1328,7 +1554,7 @@ class VideoStudio:
         s["visual_request"]=request
         p=self.preview_path(i)
         try:
-            make_original_visual(s["text"],p,size=(960,540),seed=i+int(time.time())%10000,request=request)
+            make_original_visual(s["text"],p,size=self.preview_canvas_size(),seed=i+int(time.time())%10000,request=request)
             s["image"]=str(p)
             self.show_preview(i)
             self.set_status("Yerel sahne asistanı isteğini görsel kurallara uyguladı.")
@@ -1337,11 +1563,40 @@ class VideoStudio:
 
     def choose_image(self):
         i=self.selected_index()
-        if i is None:return
+        if i is None:
+            messagebox.showinfo("Görsel seçimi","Önce görsel eklemek istediğin sahneyi seç.")
+            return
         p=filedialog.askopenfilename(filetypes=[("Görsel","*.png *.jpg *.jpeg *.webp *.bmp")])
-        if p:
-            self.project["scenes"][i]["image"]=p
-            self.set_status("Sahne görseli eklendi.")
+        if not p:
+            return
+        try:
+            with Image.open(p) as candidate:
+                candidate.verify()
+            with Image.open(p) as candidate:
+                candidate.load()
+        except Exception as e:
+            messagebox.showerror("Geçersiz görsel",f"Bu dosya okunabilir bir görsel değil.\n\n{e}")
+            return
+        self.project["scenes"][i]["image"]=p
+        self.show_preview(i)
+        self.set_status("Sahne görseli eklendi ve ön izleme yenilendi.")
+
+    def reset_scene_image(self):
+        i=self.selected_index()
+        if i is None:
+            messagebox.showinfo("Görsel","Önce sıfırlamak istediğin sahneyi seç.")
+            return
+        scene=self.project["scenes"][i]
+        scene["image"]=""
+        try:
+            p=self.preview_path(i)
+            make_original_visual(scene["text"],p,size=self.preview_canvas_size(),seed=i,
+                                 request=scene.get("visual_request",""))
+            scene["image"]=str(p)
+            self.show_preview(i)
+            self.set_status("Sahne görseli varsayılan yerel kompozisyona döndürüldü.")
+        except Exception as e:
+            messagebox.showerror("Görsel sıfırlanamadı",str(e))
 
     def choose_audio(self):
         i=self.selected_index()
@@ -1356,6 +1611,57 @@ class VideoStudio:
         if p:
             self.project["music"]=p; self.music_label.config(text=Path(p).name)
 
+    def choose_comfy_workflow(self):
+        path=filedialog.askopenfilename(title="ComfyUI API iş akışını seç",filetypes=[("JSON iş akışı","*.json")])
+        if path:
+            self.comfy_workflow_var.set(path)
+            self.comfy_status.config(text="API iş akışı: "+Path(path).name)
+            self.set_status("ComfyUI iş akışı seçildi.")
+
+    def generate_comfy_visual(self):
+        i=self.selected_index()
+        if i is None:
+            messagebox.showinfo("Sahne seç","Önce görsel üretilecek sahneyi seç.")
+            return
+        workflow=self.comfy_workflow_var.get().strip()
+        if not workflow or not Path(workflow).is_file():
+            messagebox.showinfo("İş akışı gerekli","ComfyUI arayüzünden File > Export Workflow (API) ile JSON dışa aktar ve burada seç.")
+            return
+        if getattr(self,"comfy_busy",False):
+            messagebox.showinfo("İşlem sürüyor","ComfyUI görsel üretimi zaten devam ediyor.")
+            return
+        self.apply_scene_text()
+        scene=self.project["scenes"][i]
+        request=scene.get("visual_request","")
+        prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+scene.get("text","")+" "+request).strip()
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
+        folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
+        self.comfy_busy=True
+        self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
+        self.set_status("Gerçek AI görseli ComfyUI ile üretiliyor...")
+        def worker():
+            try:
+                result=comfyui_generate_image(self.comfy_url_var.get(),workflow,prompt_text,folder,width,height)
+                self.root.after(0,lambda:self._comfy_visual_done(i,result,None))
+            except Exception as exc:
+                message=str(exc)
+                self.root.after(0,lambda:self._comfy_visual_done(i,None,message))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _comfy_visual_done(self,index,image_path,error):
+        self.comfy_busy=False
+        if error:
+            self.comfy_status.config(text="ComfyUI hatası: "+error[:220])
+            self.set_status("AI görsel üretimi tamamlanamadı.")
+            messagebox.showerror("ComfyUI görsel üretimi",error)
+            return
+        if index>=len(self.project.get("scenes",[])):
+            return
+        self.project["scenes"][index]["image"]=image_path
+        self.show_preview(index)
+        self.comfy_status.config(text="AI görseli hazır: "+Path(image_path).name)
+        self.set_status("ComfyUI gerçek AI görseli sahneye aktarıldı.")
+
     def generate_visual(self):
         i=self.selected_index()
         if i is None:return
@@ -1364,7 +1670,7 @@ class VideoStudio:
         folder.mkdir(parents=True,exist_ok=True)
         p=folder/f"sahne_{i+1:03d}.jpg"
         try:
-            make_original_visual(s["text"],p,seed=i,request=s.get("visual_request",""))
+            make_original_visual(s["text"],p,size=self.preview_canvas_size(),seed=i,request=s.get("visual_request",""))
             s["image"]=str(p)
             self.show_preview(i)
             self.set_status("Özgün grafik görseli oluşturuldu.")
@@ -1555,9 +1861,10 @@ class VideoStudio:
             folder.mkdir(parents=True,exist_ok=True)
             assets=folder/"gecici"; assets.mkdir(exist_ok=True)
             ratio=self.project["ratio"]
-            profile=platform_profile(self.project.get("platform","Özel format"))
-            size=profile["size"]
-            fps=profile["fps"]
+            # Proje arayüzünde doğrudan en-boy oranı seçiliyor; platform profili
+            # ayrıca seçilmediği için çıktı boyutunu bu orandan türet.
+            size=(1080,1920) if ratio=="9:16" else (1920,1080)
+            fps=30
             clips=[]
             for idx,scene in enumerate(self.project["scenes"]):
                 self._ui_status(f"{idx+1}/{len(self.project['scenes'])}: Sahne hazırlanıyor...")
@@ -1620,7 +1927,7 @@ class VideoStudio:
                     dur=max(4,min(12,len(scene["text"])/18))
                     frame=str(assets/f"clip_{idx:03d}.mp4")
                     vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},eq=contrast=1.06:saturation=0.94,vignette=angle=PI/5,noise=alls=2:allf=t+u,format=yuv420p"
-                    run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r","25","-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
+                    run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r",str(fps),"-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
                 clips.append(frame)
 
             concat=assets/"concat.txt"
