@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.3.1 - Görsel Stüdyo"
-APP_VERSION = "5.3.1"
+APP_NAME = "Video Studyosu V5.3.2 - Görsel Stüdyo"
+APP_VERSION = "5.3.2"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -638,7 +638,7 @@ class VideoStudio:
         box=ttk.LabelFrame(self.update_tab,text="Video Studyosu güncelleme merkezi",padding=18)
         box.pack(fill="x",anchor="n")
         ttk.Label(box,text=f"Kurulu sürüm: {APP_VERSION}",font=("Segoe UI",12,"bold")).pack(anchor="w",pady=(0,8))
-        ttk.Label(box,text="Yeni sürümleri buradan kontrol edebilirsin. Güncelleme bulunduğunda indirip kurmadan önce onayını isteriz.",wraplength=760,justify="left").pack(anchor="w",pady=(0,14))
+        ttk.Label(box,text="Yeni sürümler açılışta otomatik kontrol edilir; bulunduğunda arka planda indirilip kurulur. Proje ve video klasörlerin korunur.",wraplength=760,justify="left").pack(anchor="w",pady=(0,14))
         ttk.Button(box,text="Güncellemeleri kontrol et",command=self.check_for_updates).pack(anchor="w")
         ttk.Label(self.update_tab,text="Projelerin ve dışa aktardığın videolar güncelleme sırasında korunur. Program dosyası değiştirilmeden önce yedeklenir.",foreground="#555",wraplength=760,justify="left").pack(anchor="w",pady=16)
 
@@ -646,9 +646,9 @@ class VideoStudio:
         if self.busy:
             messagebox.showinfo("Güncelleme", "Video hazırlanırken güncelleme kontrol edilemez.")
             return
-        threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
+        threading.Thread(target=self._check_for_updates_worker, kwargs={"silent": False}, daemon=True).start()
 
-    def _check_for_updates_worker(self):
+    def _check_for_updates_worker(self, silent=True):
         try:
             url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
             req = urllib.request.Request(url, headers={"User-Agent": "VideoStudyosu-Updater", "Accept": "application/vnd.github+json"})
@@ -658,15 +658,15 @@ class VideoStudio:
             if not tag:
                 raise RuntimeError("GitHub'da yayımlanmış bir sürüm bulunamadı.")
             if self._version_tuple(tag) <= self._version_tuple(APP_VERSION):
-                self.root.after(0, lambda: messagebox.showinfo("Güncelleme", f"Program güncel.\nKurulu sürüm: {APP_VERSION}"))
+                if not silent: self.root.after(0, lambda: messagebox.showinfo("Güncelleme", f"Program güncel.\nKurulu sürüm: {APP_VERSION}"))
                 return
             asset = next((a for a in release.get("assets", []) if a.get("name") == UPDATE_ASSET), None)
             if not asset:
                 raise RuntimeError(f"Yeni sürüm bulundu ({tag}) ancak {UPDATE_ASSET} dosyası sürüme eklenmemiş.")
-            if not self.root.after(0, lambda: self._ask_update(tag, asset.get("browser_download_url", ""))):
-                return
+            self.root.after(0, lambda v=tag: self.set_status(f"{v} güncellemesi indiriliyor..."))
+            threading.Thread(target=self._download_and_install_update, args=(tag, asset.get("browser_download_url", "")), daemon=True).start()
         except Exception as exc:
-            self.root.after(0, lambda e=str(exc): messagebox.showerror("Güncelleme kontrolü", "Güncelleme kontrol edilemedi.\n" + e))
+            if not silent: self.root.after(0, lambda e=str(exc): messagebox.showerror("Güncelleme kontrolü", "Güncelleme kontrol edilemedi.\n" + e))
 
     @staticmethod
     def _version_tuple(value):
@@ -700,7 +700,7 @@ class VideoStudio:
             else:
                 raise RuntimeError("Otomatik EXE güncellemesi yalnızca kurulu masaüstü uygulamasında çalışır. İlk kurulum paketini kullanın.")
             subprocess.Popen(
-                ["cmd.exe", "/c", "start", "", str(bat), str(target_exe)],
+                ["cmd.exe", "/c", str(bat), str(target_exe)],
                 cwd=str(work),
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
@@ -1489,6 +1489,8 @@ class VideoStudio:
 def main():
     root=tk.Tk()
     app=VideoStudio(root)
+    if getattr(sys, "frozen", False):
+        root.after(2500, lambda: threading.Thread(target=app._check_for_updates_worker, kwargs={"silent": True}, daemon=True).start())
     root.mainloop()
 
 if __name__=="__main__":
