@@ -2,20 +2,10 @@
 setlocal EnableExtensions
 chcp 65001 >nul
 title Video Studyosu - Guncelleme
-set "SOURCE="
-for /r "%~dp0" %%F in ("Video Studyosu.exe") do (
-  if not defined SOURCE set "SOURCE=%%~fF"
-)
 set "TARGET=%~1"
 if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
-if not defined SOURCE (
-  echo HATA: Yeni program dosyasi bulunamadi.
-  pause
-  exit /b 10
-)
 for %%I in ("%TARGET%") do set "TARGETDIR=%%~dpI"
 if not exist "%TARGETDIR%" mkdir "%TARGETDIR%"
-set "UPDATE_SOURCE=%SOURCE%"
 set "UPDATE_TARGET=%TARGET%"
 set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
 (
@@ -25,7 +15,7 @@ set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
   echo $log = Join-Path $logDir 'update.log'
   echo function Write-Log^($m^) { Add-Content -LiteralPath $log -Value ^("[$(Get-Date -Format o)] $m"^) }
   echo try {
-  echo   $src = $env:UPDATE_SOURCE
+  echo   $src = Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Video Studyosu.exe' -File -Recurse ^| Select-Object -First 1 -ExpandProperty FullName
   echo   $dst = $env:UPDATE_TARGET
   echo   Write-Log "Updater started. Source=$src Target=$dst"
   echo   if ^(-not ^(Test-Path -LiteralPath $src -PathType Leaf^)^) { throw "Update EXE not found: $src" }
