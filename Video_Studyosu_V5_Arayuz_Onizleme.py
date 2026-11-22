@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Karabudak Film Stüdyoları V5.5.0"
-APP_VERSION = "5.5.0"
+APP_NAME = "Karabudak Film Stüdyoları V5.5.1"
+APP_VERSION = "5.5.1"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -294,6 +294,30 @@ def fit_image(src, size):
     im=im.resize((nw,nh),Image.Resampling.LANCZOS)
     x=(nw-w)//2; y=(nh-h)//2
     return im.crop((x,y,x+w,y+h))
+
+def make_motion_preview_frame(source, frame_no, frame_count=72):
+    """Creates a lightweight animated cinematic preview from the scene still."""
+    base=source.convert("RGB")
+    w,h=base.size
+    phase=(frame_no % frame_count)/max(1,frame_count)
+    zoom=1.0+0.035*(0.5-0.5*math.cos(phase*2*math.pi))
+    cw,ch=max(1,int(w/zoom)),max(1,int(h/zoom))
+    dx=int((w-cw)*(0.5+0.18*math.sin(phase*2*math.pi)))
+    dy=int((h-ch)*(0.5+0.12*math.cos(phase*2*math.pi)))
+    frame=base.crop((dx,dy,dx+cw,dy+ch)).resize((w,h),Image.Resampling.LANCZOS).convert("RGBA")
+    atmosphere=Image.new("RGBA",(w,h),(0,0,0,0))
+    ad=ImageDraw.Draw(atmosphere)
+    for band in range(4):
+        y=int(h*(0.48+band*0.12+0.025*math.sin(phase*2*math.pi+band)))
+        ad.ellipse((-int(w*.18),y-int(h*.045),int(w*1.18),y+int(h*.045)),fill=(185,205,215,18))
+    for j in range(34):
+        x=int(((j*0.61803398875+phase*0.10)%1.0)*w)
+        y=int(((j*0.38196601125+phase*0.035)%1.0)*h)
+        r=1+(j%3==0)
+        ad.ellipse((x-r,y-r,x+r,y+r),fill=(225,230,235,65+(j%4)*18))
+    atmosphere=atmosphere.filter(ImageFilter.GaussianBlur(max(2,int(min(w,h)*0.006))))
+    return Image.alpha_composite(frame,atmosphere).convert("RGB")
+
 
 def run_ffmpeg(args):
     cmd=[ffmpeg(), "-y", *args]
@@ -1255,9 +1279,28 @@ class VideoStudio:
             self.preview_window.lift()
             self.preview_title.config(text=f"Sahne {i+1} / {len(self.project['scenes'])}")
             self.preview_image_label.configure(image=self.preview_photo,text="")
-            self.set_status(f"Sahne {i+1} ön izlemede.")
+            self._start_preview_animation(p)
+            self.set_status(f"Sahne {i+1} hareketli ön izlemede.")
         except Exception as e:
             messagebox.showerror("Ön izleme açılamadı",str(e))
+
+    def _start_preview_animation(self, image_path):
+        if hasattr(self,"preview_animation_after"):
+            try: self.root.after_cancel(self.preview_animation_after)
+            except Exception: pass
+        self.preview_animation_source=Image.open(image_path).convert("RGB")
+        self.preview_animation_frame=0
+        self._animate_preview_frame()
+
+    def _animate_preview_frame(self):
+        if not hasattr(self,"preview_window") or not self.preview_window.winfo_exists():
+            return
+        frame=make_motion_preview_frame(self.preview_animation_source,self.preview_animation_frame)
+        frame.thumbnail((900,560),Image.Resampling.LANCZOS)
+        self.preview_photo=ImageTk.PhotoImage(frame)
+        self.preview_image_label.configure(image=self.preview_photo,text="")
+        self.preview_animation_frame+=1
+        self.preview_animation_after=self.root.after(90,self._animate_preview_frame)
 
     def prepare_all_previews(self):
         self.apply_scene_text_if_needed()
@@ -1570,13 +1613,13 @@ class VideoStudio:
                     m=re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)",probe.stderr)
                     dur=(int(m.group(1))*3600+int(m.group(2))*60+float(m.group(3))) if m else max(4,len(scene["text"])/13)
                     frame=str(assets/f"clip_{idx:03d}.mp4")
-                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},format=yuv420p"
+                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},eq=contrast=1.06:saturation=0.94,vignette=angle=PI/5,noise=alls=2:allf=t+u,format=yuv420p"
                     run_ffmpeg(["-loop","1","-i",img,"-i",a,"-vf",vf,"-t",str(max(2,dur)),"-r",str(fps),"-c:v","libx264","-preset","medium","-b:v","8M","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-shortest",frame])
                 else:
                     # Subtitle-only: show each translated scene for a readable fixed duration.
                     dur=max(4,min(12,len(scene["text"])/18))
                     frame=str(assets/f"clip_{idx:03d}.mp4")
-                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},format=yuv420p"
+                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},eq=contrast=1.06:saturation=0.94,vignette=angle=PI/5,noise=alls=2:allf=t+u,format=yuv420p"
                     run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r","25","-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
                 clips.append(frame)
 
