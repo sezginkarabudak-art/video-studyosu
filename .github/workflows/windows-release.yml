@@ -36,6 +36,9 @@ jobs:
           if (!(Test-Path "Video_Studyosu_V5_Arayuz_Onizleme.py")) { throw "Ana program dosyasi depoda yok." }
           if (!(Test-Path "apply_patch.ps1")) { throw "Yama uygulama dosyasi depoda yok." }
           if (!(Test-Path "update_full.ps1")) { throw "Tam guncelleme dosyasi depoda yok." }
+      - name: Python syntax and import compilation
+        run: |
+          python -m py_compile Video_Studyosu_V5_Arayuz_Onizleme.py
       - name: Windows updater smoke tests
         shell: pwsh
         run: |
