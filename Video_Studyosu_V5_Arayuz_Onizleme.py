@@ -9,8 +9,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.9"
-APP_VERSION = "5.6.9"
+APP_NAME = "Karabudak Film Stüdyoları V5.7.0"
+APP_VERSION = "5.7.0"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -2607,6 +2607,61 @@ class VideoStudio:
             self.set_status("Proje açıldı; Türkçe karakterler korundu.")
         except Exception as e: messagebox.showerror("Proje açılamadı",str(e))
 
+    def ask_platform_format(self):
+        """Choose a social platform and one of its actual export profiles before rendering."""
+        profiles={
+            "Instagram":{
+                "Reels (9:16) — 1080×1920":(1080,1920,30,"instagram_reels"),
+                "Hikâye / Story (9:16) — 1080×1920":(1080,1920,30,"instagram_story"),
+                "Gönderi dikey (4:5) — 1080×1350":(1080,1350,30,"instagram_portrait"),
+                "Gönderi kare (1:1) — 1080×1080":(1080,1080,30,"instagram_square"),
+                "Gönderi yatay (1.91:1) — 1080×566":(1080,566,30,"instagram_landscape"),
+            },
+            "YouTube":{
+                "Standart video (16:9) — 1920×1080":(1920,1080,30,"youtube_standard"),
+                "Shorts (9:16) — 1080×1920":(1080,1920,30,"youtube_shorts"),
+                "Kare video (1:1) — 1080×1080":(1080,1080,30,"youtube_square"),
+            },
+            "TikTok":{
+                "Dikey video (9:16) — 1080×1920":(1080,1920,30,"tiktok_vertical"),
+                "Kare video (1:1) — 1080×1080":(1080,1080,30,"tiktok_square"),
+                "Yatay video (16:9) — 1920×1080":(1920,1080,30,"tiktok_landscape"),
+            },
+        }
+        win=tk.Toplevel(self.root)
+        win.title("Platform ve video formatı")
+        win.transient(self.root); win.grab_set(); win.resizable(False,False)
+        box=ttk.Frame(win,padding=18); box.pack(fill="both",expand=True)
+        ttk.Label(box,text="Videoyu hangi platform için hazırlıyoruz?",font=("Segoe UI",13,"bold")).pack(anchor="w",pady=(0,12))
+        platform=tk.StringVar(value="YouTube")
+        fmt=tk.StringVar(value="Standart video (16:9) — 1920×1080")
+        ttk.Label(box,text="Sosyal medya platformu").pack(anchor="w")
+        platform_box=ttk.Combobox(box,textvariable=platform,values=list(profiles),state="readonly",width=42)
+        platform_box.pack(fill="x",pady=(4,10))
+        ttk.Label(box,text="Platforma uygun video formatı").pack(anchor="w")
+        format_box=ttk.Combobox(box,textvariable=fmt,state="readonly",width=42)
+        format_box.pack(fill="x",pady=(4,8))
+        hint=ttk.Label(box,text="",foreground="#555")
+        hint.pack(anchor="w")
+        selected={}
+        def update_formats(_event=None):
+            options=list(profiles[platform.get()])
+            format_box.configure(values=options)
+            if fmt.get() not in options: fmt.set(options[0])
+            w,h,fps,key=profiles[platform.get()][fmt.get()]
+            hint.config(text=f"Çıktı: {w} × {h} piksel  •  {fps} FPS  •  MP4 / H.264")
+        def confirm():
+            w,h,fps,key=profiles[platform.get()][fmt.get()]
+            selected.update(platform=platform.get(),format=fmt.get(),width=w,height=h,fps=fps,profile_key=key)
+            win.destroy()
+        platform_box.bind("<<ComboboxSelected>>",update_formats)
+        update_formats()
+        row=ttk.Frame(box); row.pack(fill="x",pady=(16,0))
+        ttk.Button(row,text="Devam et",command=confirm).pack(side="right")
+        ttk.Button(row,text="Vazgeç",command=win.destroy).pack(side="right",padx=6)
+        self.root.wait_window(win)
+        return selected or None
+
     def ask_output_mode(self):
         win=tk.Toplevel(self.root)
         win.title("Video ses ve altyazı ayarları")
@@ -2645,9 +2700,18 @@ class VideoStudio:
         if not self.project["scenes"]:
             messagebox.showwarning("Metin gerekli","Önce hikâyeni yazıp sahnelere ayır.")
             return
+        export=self.ask_platform_format()
+        if not export:
+            return
         choices=self.ask_output_mode()
         if not choices:
             return
+        self.project["export_platform"]=export["platform"]
+        self.project["export_format"]=export["format"]
+        self.project["export_profile"]=export["profile_key"]
+        self.project["render_width"]=export["width"]
+        self.project["render_height"]=export["height"]
+        self.project["render_fps"]=export["fps"]
         self.project["name"]=self.name_var.get().strip() or "Video"
         self.project["ratio"]=self.ratio.get()
         self.project["voice"]=self.selected_voice_name()
@@ -2672,14 +2736,14 @@ class VideoStudio:
             subtitle_name=self.project.get("subtitle_language") or "İngilizce"
             subtitle_code=SUBTITLE_LANGUAGES.get(subtitle_name,"en")
             name=safe_name(self.project["name"])
-            folder=OUT_ROOT/name
+            platform_key=safe_name(self.project.get("export_platform","Video"))
+            format_key=safe_name(self.project.get("export_profile","default"))
+            folder=OUT_ROOT/name/platform_key/format_key
             folder.mkdir(parents=True,exist_ok=True)
             assets=folder/"gecici"; assets.mkdir(exist_ok=True)
             ratio=self.project["ratio"]
-            # Proje arayüzünde doğrudan en-boy oranı seçiliyor; platform profili
-            # ayrıca seçilmediği için çıktı boyutunu bu orandan türet.
-            size=(1080,1920) if ratio=="9:16" else (1920,1080)
-            fps=30
+            size=(int(self.project.get("render_width",1920)),int(self.project.get("render_height",1080)))
+            fps=int(self.project.get("render_fps",30))
             clips=[]
             for idx,scene in enumerate(self.project["scenes"]):
                 self._ui_status(f"{idx+1}/{len(self.project['scenes'])}: Sahne hazırlanıyor...")
@@ -2757,7 +2821,7 @@ class VideoStudio:
             concat.write_text("\n".join(f"file '{p.replace(chr(39), chr(39)+chr(92)+chr(39)+chr(39))}'" for p in clips)+"\n",encoding="utf-8")
             silent=folder/(name+"_sessiz.mp4")
             run_ffmpeg(["-f","concat","-safe","0","-i",str(concat),"-c","copy",str(silent)])
-            final=folder/(name+".mp4")
+            final=folder/(name+"_"+format_key+".mp4")
             music=self.project.get("music","")
             if music and Path(music).exists():
                 vol=max(0,min(0.4,int(self.project.get("music_volume",12))/100))
