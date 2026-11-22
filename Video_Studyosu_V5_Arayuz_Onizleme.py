@@ -122,9 +122,8 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
     text_nodes=[]
     negative_nodes=[]
     reference_images=list(reference_images or [])
-    uploaded_refs=[]
-    for reference in reference_images:
-        uploaded_refs.append(comfyui_upload_reference_image(base_url,reference))
+    uploaded_refs=[comfyui_upload_reference_image(base_url,reference) for reference in reference_images]
+    ipadapter_nodes=[]
     for node_id,node in workflow.items():
         if not isinstance(node,dict): continue
         kind=node.get("class_type","")
@@ -133,15 +132,29 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
             text_value=inputs.get("text")
             if isinstance(text_value,str):
                 text_nodes.append((node_id,inputs,text_value))
-        if kind=="KSampler" and isinstance(inputs,dict):
+        if kind in ("KSampler","KSamplerAdvanced") and isinstance(inputs,dict):
             if "seed" in inputs: inputs["seed"]=int(seed or 0) % (2**32)
             negative=inputs.get("negative")
             if isinstance(negative,(list,tuple)) and negative: negative_nodes.append(str(negative[0]))
-        if kind=="LoadImage" and isinstance(inputs,dict) and uploaded_refs:
-            inputs["image"]=uploaded_refs.pop(0)
+        if "IPAdapter" in kind and isinstance(inputs,dict) and "image" in inputs:
+            ipadapter_nodes.append((str(node_id),inputs))
         if kind in ("EmptyLatentImage","EmptySD3LatentImage") and isinstance(inputs,dict):
             if "width" in inputs: inputs["width"]=int(width)
             if "height" in inputs: inputs["height"]=int(height)
+    # Attach uploaded references to actual IPAdapter image inputs, not merely to unused LoadImage nodes.
+    if uploaded_refs:
+        if not ipadapter_nodes:
+            raise ValueError("Bu ComfyUI iş akışında IPAdapter görüntü uygulama düğümü bulunamadı. IPAdapter Unified Loader sonrasına IPAdapter Advanced (veya IPAdapter) düğümü ekle; image girişini bu düğümde açık bırak.")
+        if len(uploaded_refs)>len(ipadapter_nodes):
+            raise ValueError(f"{len(uploaded_refs)} karakter referansı seçildi ancak iş akışında yalnızca {len(ipadapter_nodes)} IPAdapter görüntü düğümü var. Her karakter için ayrı IPAdapter düğümü ekle.")
+        next_id=max([int(k) for k in workflow if str(k).isdigit()] or [0])+1
+        for (adapter_id,adapter_inputs),image_name in zip(ipadapter_nodes,uploaded_refs):
+            load_id=str(next_id); next_id+=1
+            workflow[load_id]={
+                "class_type":"LoadImage",
+                "inputs":{"image":image_name}
+            }
+            adapter_inputs["image"]=[load_id,0]
     if not text_nodes:
         raise ValueError("İş akışında CLIPTextEncode metin düğümü bulunamadı. API formatında SD/SDXL iş akışı seç.")
     # Prefer the encoder connected to KSampler.positive; fall back to first encoder.
@@ -157,10 +170,6 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
     negative_node=next((item for item in text_nodes if item[0] in negative_nodes),None)
     if negative_node:
         negative_node[1]["text"]=(negative_node[1].get("text","")+" blurry, low quality, deformed anatomy, extra fingers, duplicate person, inconsistent face, inconsistent clothing").strip(", ")
-    if uploaded_refs:
-        raise ValueError("ComfyUI iş akışında karakter görseli için yeterli sayıda LoadImage düğümü yok. Referans görselini IPAdapter/ControlNet hattına bağlı bir LoadImage düğümüne bağla.")
-    if reference_images and not any(isinstance(n,dict) and n.get("class_type")=="LoadImage" for n in workflow.values()):
-        raise ValueError("Seçili ComfyUI iş akışında LoadImage düğümü yok. Karakter referansı için IPAdapter/ControlNet bağlantılı API iş akışı kullan.")
     client_id="video-studyosu-"+str(random.randint(100000,999999999))
     payload=json.dumps({"prompt":workflow,"client_id":client_id}).encode("utf-8")
     request=urllib.request.Request(base_url+"/prompt",data=payload,headers={"Content-Type":"application/json"},method="POST")
