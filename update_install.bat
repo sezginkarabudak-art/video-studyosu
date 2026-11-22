@@ -5,7 +5,10 @@ title Video Studyosu - Guncelleme
 set "TARGET=%~1"
 if exist "%~dp0manifest.json" (
   if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -Target "%TARGET%" -Package "%~dp0"
+  rem IMPORTANT: use %~dp0. so the argument does not end in a backslash before
+  rem the closing quote; Windows command-line parsing can otherwise retain the quote.
+  set "PACKAGE_DIR=%~dp0."
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -Target "%TARGET%" -Package "%PACKAGE_DIR%"
   exit /b %errorlevel%
 )
 if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
@@ -18,11 +21,14 @@ set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
   echo $logDir = Join-Path $env:LOCALAPPDATA 'VideoStudyosu'
   echo New-Item -ItemType Directory -Force -Path $logDir ^| Out-Null
   echo $log = Join-Path $logDir 'update.log'
-  echo function Write-Log^($m^) { Add-Content -LiteralPath $log -Value ^("[$(Get-Date -Format o)] $m"^) }
+  echo function Write-Log^($m^) { Add-Content -LiteralPath $log -Encoding UTF8 -Value ^("[$(Get-Date -Format o)] $m"^) }
   echo try {
   echo   $src = Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Video Studyosu.exe' -File -Recurse ^| Where-Object { $_.Directory.Name -eq 'Video Studyosu' } ^| Select-Object -First 1 -ExpandProperty FullName
   echo   $dst = $env:UPDATE_TARGET
-  echo   Write-Log "Updater started. Source=$src Target=$dst"
+  echo   Write-Log "Updater started. Source=[$src] Target=[$dst]"
+  echo   if ^(-not $src^) { throw 'Update EXE not found in extracted package.' }
+  echo   $src = ([string]$src).Trim([char]34)
+  echo   $dst = ([string]$dst).Trim([char]34)
   echo   if ^(-not ^(Test-Path -LiteralPath $src -PathType Leaf^)^) { throw "Update EXE not found: $src" }
   echo   $dstDir = Split-Path -Parent $dst
   echo   New-Item -ItemType Directory -Force -Path $dstDir ^| Out-Null
@@ -44,7 +50,7 @@ set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
   echo   Copy-Item -Path (Join-Path $srcDir '*') -Destination $dstDir -Recurse -Force
   echo   if ^(-not ^(Test-Path -LiteralPath $dst -PathType Leaf^)^) { throw 'Updated application EXE was not copied.' }
   echo   if ^(-not ^(Test-Path -LiteralPath (Join-Path $dstDir '_internal') -PathType Container^)^) { throw 'Updated runtime folder was not copied.' }
-  echo   Write-Log "Application folder updated. EXE bytes=$((Get-Item -LiteralPath $dst).Length)"
+  echo   Write-Log "EXE replaced successfully. Bytes=$((Get-Item -LiteralPath $dst).Length)"
   echo   Start-Process -FilePath $dst
   echo   Write-Log 'New application launched.'
   echo } catch {
