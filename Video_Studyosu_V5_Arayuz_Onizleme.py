@@ -1632,7 +1632,10 @@ class VideoStudio:
             folder.mkdir(parents=True,exist_ok=True)
             assets=folder/"gecici"; assets.mkdir(exist_ok=True)
             ratio=self.project["ratio"]
-            profile=platform_profile(self.project.get("platform","Özel format"))
+            # Proje arayüzünde doğrudan en-boy oranı seçiliyor; platform profili
+            # ayrıca seçilmediği için çıktı boyutunu bu orandan türet.
+            profile_name=self.project.get("platform") or ("YouTube Shorts" if ratio=="9:16" else "YouTube yatay video")
+            profile=platform_profile(profile_name)
             size=profile["size"]
             fps=profile["fps"]
             clips=[]
@@ -1697,7 +1700,7 @@ class VideoStudio:
                     dur=max(4,min(12,len(scene["text"])/18))
                     frame=str(assets/f"clip_{idx:03d}.mp4")
                     vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},eq=contrast=1.06:saturation=0.94,vignette=angle=PI/5,noise=alls=2:allf=t+u,format=yuv420p"
-                    run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r","25","-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
+                    run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r",str(fps),"-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
                 clips.append(frame)
 
             concat=assets/"concat.txt"
