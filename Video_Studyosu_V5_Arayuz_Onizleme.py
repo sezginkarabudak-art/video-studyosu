@@ -1312,6 +1312,10 @@ class VideoStudio:
         self.project["scenes"][i],self.project["scenes"][j]=self.project["scenes"][j],self.project["scenes"][i]
         self.refresh_scenes(j)
 
+    def preview_canvas_size(self):
+        # Keep generated stills in the same aspect ratio as the selected export.
+        return (540,960) if getattr(self,"ratio",None) and self.ratio.get()=="9:16" else (960,540)
+
     def preview_path(self, i):
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"on_izleme"
         folder.mkdir(parents=True,exist_ok=True)
@@ -1323,7 +1327,7 @@ class VideoStudio:
         p=scene.get("image","")
         if not p or not Path(p).exists():
             p=str(self.preview_path(i))
-            make_original_visual(scene["text"],p,size=(960,540),seed=i,
+            make_original_visual(scene["text"],p,size=self.preview_canvas_size(),seed=i,
                                  request=scene.get("visual_request",""))
             scene["image"]=p
         try:
@@ -1376,7 +1380,7 @@ class VideoStudio:
             p=s.get("image","")
             if not p or not Path(p).exists():
                 p=self.preview_path(i)
-                make_original_visual(s["text"],p,size=(960,540),seed=i,request=s.get("visual_request",""))
+                make_original_visual(s["text"],p,size=self.preview_canvas_size(),seed=i,request=s.get("visual_request",""))
                 s["image"]=str(p)
         self.refresh_scenes(0)
         self.show_preview(0)
@@ -1394,7 +1398,7 @@ class VideoStudio:
         s["visual_request"]=request
         p=self.preview_path(i)
         try:
-            make_original_visual(s["text"],p,size=(960,540),seed=i+int(time.time())%10000,request=request)
+            make_original_visual(s["text"],p,size=self.preview_canvas_size(),seed=i+int(time.time())%10000,request=request)
             s["image"]=str(p)
             self.show_preview(i)
             self.set_status("Yerel sahne asistanı isteğini görsel kurallara uyguladı.")
@@ -1459,7 +1463,7 @@ class VideoStudio:
         folder.mkdir(parents=True,exist_ok=True)
         p=folder/f"sahne_{i+1:03d}.jpg"
         try:
-            make_original_visual(s["text"],p,seed=i,request=s.get("visual_request",""))
+            make_original_visual(s["text"],p,size=self.preview_canvas_size(),seed=i,request=s.get("visual_request",""))
             s["image"]=str(p)
             self.show_preview(i)
             self.set_status("Özgün grafik görseli oluşturuldu.")
@@ -1652,10 +1656,8 @@ class VideoStudio:
             ratio=self.project["ratio"]
             # Proje arayüzünde doğrudan en-boy oranı seçiliyor; platform profili
             # ayrıca seçilmediği için çıktı boyutunu bu orandan türet.
-            profile_name=self.project.get("platform") or ("YouTube Shorts" if ratio=="9:16" else "YouTube yatay video")
-            profile=platform_profile(profile_name)
-            size=profile["size"]
-            fps=profile["fps"]
+            size=(1080,1920) if ratio=="9:16" else (1920,1080)
+            fps=30
             clips=[]
             for idx,scene in enumerate(self.project["scenes"]):
                 self._ui_status(f"{idx+1}/{len(self.project['scenes'])}: Sahne hazırlanıyor...")
