@@ -359,7 +359,7 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     d = ImageDraw.Draw(im, "RGBA")
     # Atmospheric particles / stars
     for _ in range(170):
-        x,y = rng.randrange(w), random.randrange(h)
+        x,y = rng.randrange(w), rng.randrange(h)
         r = rng.choice([1,1,2,3])
         alpha = rng.randint(20,100)
         d.ellipse((x-r,y-r,x+r,y+r), fill=(220,220,210,alpha))
@@ -378,17 +378,17 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
             x0=side
             for j in range(7):
                 yy=int(h*.38+j*35)
-                x1 = x0 + (1 if side==0 else -1)*random.randint(80,230)
-                d.line((x0,yy,x1,yy-random.randint(50,150)), fill=(2,5,7,220), width=random.randint(5,13))
+                x1 = x0 + (1 if side==0 else -1)*rng.randint(80,230)
+                d.line((x0,yy,x1,yy-rng.randint(50,150)), fill=(2,5,7,220), width=rng.randint(5,13))
     elif kind == "nature":
         for i in range(16):
-            x=random.randint(-30,w+30); base=horizon+random.randint(0,70)
-            top=random.randint(int(h*.18),int(h*.52))
-            d.polygon([(x,base),(x-random.randint(25,65),base),(x,top),(x+random.randint(25,65),base)], fill=(3,18,17,210))
+            x=rng.randint(-30,w+30); base=horizon+rng.randint(0,70)
+            top=rng.randint(int(h*.18),int(h*.52))
+            d.polygon([(x,base),(x-rng.randint(25,65),base),(x,top),(x+rng.randint(25,65),base)], fill=(3,18,17,210))
     elif kind == "space":
         for _ in range(60):
-            x,y=random.randrange(w),random.randrange(horizon)
-            d.ellipse((x,y,x+random.randint(2,5),y+random.randint(2,5)), fill=(240,235,255,180))
+            x,y=rng.randrange(w),rng.randrange(horizon)
+            d.ellipse((x,y,x+rng.randint(2,5),y+rng.randint(2,5)), fill=(240,235,255,180))
         d.ellipse((int(w*.68),int(h*.12),int(w*.84),int(h*.40)), fill=(170,155,210,150))
     else:
         # subtle cinematic architecture blocks
@@ -399,7 +399,7 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     fog_count = 12 if style["fog"] else 7
     for i in range(fog_count):
         y=int(h*.48+i*24)
-        alpha = random.randint(18,42) if style["fog"] else random.randint(10,28)
+        alpha = rng.randint(18,42) if style["fog"] else rng.randint(10,28)
         fd.ellipse((-100,y-35,w+100,y+45), fill=(190,200,205,alpha))
     fog=fog.filter(ImageFilter.GaussianBlur(28))
     im=Image.alpha_composite(im.convert("RGBA"),fog).convert("RGB")
@@ -413,7 +413,7 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
         od.polygon([(sx-24,sy-100),(sx+24,sy-100),(sx+48,sy+20),(sx-48,sy+20)],fill=(3,4,8,235))
     if style["rain"]:
         for _ in range(260):
-            x=random.randrange(w); y=random.randrange(h)
+            x=rng.randrange(w); y=rng.randrange(h)
             od.line((x,y,x-12,y+32),fill=(180,205,220,90),width=2)
     if style["red"]:
         od.rectangle((0,0,w,h),fill=(100,0,10,18))
