@@ -59,7 +59,8 @@ jobs:
             $oldRuntime = Join-Path (Resolve-Path previous/unpacked) 'Video Studyosu/_internal'
             if (!(Test-Path $oldRoot) -or !(Test-Path $oldRuntime)) { throw "Önceki paketin dosya yapısı yama üretimine uygun değil." }
             $newStage = Join-Path (Get-Location) 'new_stage'
-            Copy-Item 'dist/Video Studyosu.exe' $newStage
+            New-Item -ItemType Directory -Force -Path $newStage | Out-Null
+            Copy-Item 'dist/Video Studyosu.exe' (Join-Path $newStage 'Video Studyosu.exe')
             Copy-Item 'dist/Video Studyosu/_internal' (Join-Path $newStage '_internal') -Recurse
             $oldStage = Join-Path (Get-Location) 'old_stage'
             New-Item -ItemType Directory -Force -Path $oldStage | Out-Null
@@ -84,7 +85,8 @@ jobs:
             if ($changed.Count -eq 0) { throw "Değişen dosya bulunamadı; yama oluşturulmadı." }
             $fromVersion = $previousTag.TrimStart('v')
             $manifest = [pscustomobject]@{ from_version=$fromVersion; to_version='\${{ steps.version.outputs.version }}'; files=$changed }
-            $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $patchRoot 'manifest.json') -Encoding utf8
+            $manifestJson = $manifest | ConvertTo-Json -Depth 8
+            [System.IO.File]::WriteAllText((Join-Path $patchRoot 'manifest.json'), $manifestJson, (New-Object System.Text.UTF8Encoding($false)))
             Copy-Item 'update_install.bat' $patchRoot
             Copy-Item 'apply_patch.ps1' $patchRoot
             $patchName = "VideoStudyosu_Patch_from_$fromVersion.zip"
