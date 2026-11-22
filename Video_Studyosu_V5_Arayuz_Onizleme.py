@@ -455,6 +455,64 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
         d.text((int(w*.055),int(h*.855)),excerpt,fill=(245,242,232,235),font=f)
     im.save(path, quality=94)
 
+
+def apply_camera_framing(source_path, output_path, request="", target_size=None):
+    """Apply a lightweight camera framing preset without altering the source image."""
+    text=(request or "").lower()
+    mode=None
+    if any(k in text for k in ["yakın plan","yakın çekim","close-up","close up","portre çekim"]):
+        mode="close"
+    elif any(k in text for k in ["geniş açı","genel plan","uzak plan","wide shot","wide-angle"]):
+        mode="wide"
+    elif any(k in text for k in ["tepeden çekim","üst açı","kuş bakışı","top-down","overhead"]):
+        mode="top"
+    elif any(k in text for k in ["alttan çekim","alt açı","low angle"]):
+        mode="low"
+    if not mode:
+        if target_size:
+            fit_image(source_path,target_size).save(output_path,quality=94)
+            return output_path
+        shutil.copy2(source_path,output_path)
+        return output_path
+    im=Image.open(source_path).convert("RGB")
+    w,h=im.size
+    if mode=="wide":
+        # Wider framing: preserve the complete original frame inside a soft fill.
+        if target_size:
+            fit_image(source_path,target_size).save(output_path,quality=94)
+        else:
+            im.save(output_path,quality=94)
+        return output_path
+    zoom=1.28 if mode=="close" else 1.10
+    cw,ch=max(1,int(w/zoom)),max(1,int(h/zoom))
+    left=(w-cw)//2
+    if mode=="top":
+        top=0
+    elif mode=="low":
+        top=h-ch
+    else:
+        top=(h-ch)//2
+    cropped=im.crop((left,top,left+cw,top+ch))
+    if target_size:
+        cropped=fit_image_from_object(cropped,target_size)
+    cropped.save(output_path,quality=94)
+    return output_path
+
+def fit_image_from_object(im, size):
+    """Fit a Pillow image into a target frame with a blurred background."""
+    w,h=size
+    if im.size==(w,h):
+        return im.convert("RGB")
+    cover=max(w/im.width,h/im.height)
+    bg=im.resize((max(w,int(im.width*cover)),max(h,int(im.height*cover))),Image.Resampling.LANCZOS)
+    bx=(bg.width-w)//2; by=(bg.height-h)//2
+    bg=bg.crop((bx,by,bx+w,by+h)).filter(ImageFilter.GaussianBlur(max(10,int(min(w,h)*.025))))
+    bg=Image.blend(bg,Image.new("RGB",(w,h),(0,0,0)),.25)
+    scale=min(w/im.width,h/im.height)
+    fg=im.resize((max(1,int(im.width*scale)),max(1,int(im.height*scale))),Image.Resampling.LANCZOS)
+    bg.paste(fg,((w-fg.width)//2,(h-fg.height)//2))
+    return bg
+
 def fit_image(src, size):
     """Fits an image without cutting off the subject; uses a soft blurred fill behind it."""
     w,h=size
@@ -1528,7 +1586,10 @@ class VideoStudio:
                                  request=scene.get("visual_request",""))
             scene["image"]=p
         try:
-            im=Image.open(p).convert("RGB")
+            camera_request=scene.get("visual_request","")
+            camera_path=str(self.preview_path(i)).replace("_onizleme.jpg","_kamera_onizleme.jpg")
+            apply_camera_framing(p,camera_path,camera_request,self.preview_canvas_size())
+            im=Image.open(camera_path).convert("RGB")
             im.thumbnail((900,560),Image.Resampling.LANCZOS)
             self.preview_photo=ImageTk.PhotoImage(im)
             # Keep the preview in a separate window for reliable visibility.
@@ -1916,6 +1977,9 @@ class VideoStudio:
                                          request=scene.get("visual_request",""),draw_text=False)
                 else:
                     fit_image(original,size).save(img,quality=94)
+                camera_img=str(assets/f"kamera_{idx:03d}.jpg")
+                apply_camera_framing(img,camera_img,scene.get("visual_request",""),size)
+                img=camera_img
                 chars=self.project.get("characters",[])
                 char_ids=scene.get("character_ids")
                 if not isinstance(char_ids,list):
