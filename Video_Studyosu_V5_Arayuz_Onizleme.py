@@ -84,7 +84,34 @@ def build_character_consistency_prompt(scene, characters):
             details.append(f"Keep the same recurring character identity and appearance for {name} as in the project's character reference.")
     return " ".join(details)
 
-def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200):
+
+def comfyui_upload_reference_image(base_url, image_path):
+    """Upload a character reference to ComfyUI input storage and return its server-side name."""
+    path=Path(image_path)
+    if not path.is_file():
+        raise FileNotFoundError("Karakter referans görseli bulunamadı: "+str(path))
+    boundary="----VideoStudyosu"+str(random.randint(100000000,999999999))
+    filename=path.name.replace('"',"_")
+    body=(
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'
+        f"Content-Type: application/octet-stream\r\n\r\n"
+    ).encode("utf-8")+path.read_bytes()+f"\r\n--{boundary}--\r\n".encode("utf-8")
+    req=urllib.request.Request(
+        (base_url or "http://127.0.0.1:8188").rstrip("/")+"/upload/image",
+        data=body,
+        headers={"Content-Type":"multipart/form-data; boundary="+boundary},
+        method="POST"
+    )
+    with urllib.request.urlopen(req,timeout=60) as response:
+        result=json.loads(response.read().decode("utf-8"))
+    name=result.get("name")
+    if not name:
+        raise RuntimeError("ComfyUI referans görselini yükledi ancak dosya adı dönmedi.")
+    return name
+
+
+def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200, reference_images=None, seed=0):
     """Submit an exported ComfyUI API workflow, wait for its output and save the image locally."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
     with open(workflow_path,"r",encoding="utf-8") as handle:
@@ -93,6 +120,11 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
         raise ValueError("ComfyUI API iş akışı boş veya geçersiz.")
     # Update common built-in text, seed, and latent-size nodes without assuming fixed node IDs.
     text_nodes=[]
+    negative_nodes=[]
+    reference_images=list(reference_images or [])
+    uploaded_refs=[]
+    for reference in reference_images:
+        uploaded_refs.append(comfyui_upload_reference_image(base_url,reference))
     for node_id,node in workflow.items():
         if not isinstance(node,dict): continue
         kind=node.get("class_type","")
@@ -101,8 +133,12 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
             text_value=inputs.get("text")
             if isinstance(text_value,str):
                 text_nodes.append((node_id,inputs,text_value))
-        if kind=="KSampler" and isinstance(inputs,dict) and "seed" in inputs:
-            inputs["seed"]=random.randint(1,2**31-1)
+        if kind=="KSampler" and isinstance(inputs,dict):
+            if "seed" in inputs: inputs["seed"]=int(seed or 0) % (2**32)
+            negative=inputs.get("negative")
+            if isinstance(negative,(list,tuple)) and negative: negative_nodes.append(str(negative[0]))
+        if kind=="LoadImage" and isinstance(inputs,dict) and uploaded_refs:
+            inputs["image"]=uploaded_refs.pop(0)
         if kind in ("EmptyLatentImage","EmptySD3LatentImage") and isinstance(inputs,dict):
             if "width" in inputs: inputs["width"]=int(width)
             if "height" in inputs: inputs["height"]=int(height)
@@ -118,6 +154,13 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
             positive_ids.append(str(positive[0]))
     positive_node=next((item for item in text_nodes if item[0] in positive_ids),text_nodes[0])
     positive_node[1]["text"]=prompt_text
+    negative_node=next((item for item in text_nodes if item[0] in negative_nodes),None)
+    if negative_node:
+        negative_node[1]["text"]=(negative_node[1].get("text","")+" blurry, low quality, deformed anatomy, extra fingers, duplicate person, inconsistent face, inconsistent clothing").strip(", ")
+    if uploaded_refs:
+        raise ValueError("ComfyUI iş akışında karakter görseli için yeterli sayıda LoadImage düğümü yok. Referans görselini IPAdapter/ControlNet hattına bağlı bir LoadImage düğümüne bağla.")
+    if reference_images and not any(isinstance(n,dict) and n.get("class_type")=="LoadImage" for n in workflow.values()):
+        raise ValueError("Seçili ComfyUI iş akışında LoadImage düğümü yok. Karakter referansı için IPAdapter/ControlNet bağlantılı API iş akışı kullan.")
     client_id="video-studyosu-"+str(random.randint(100000,999999999))
     payload=json.dumps({"prompt":workflow,"client_id":client_id}).encode("utf-8")
     request=urllib.request.Request(base_url+"/prompt",data=payload,headers={"Content-Type":"application/json"},method="POST")
@@ -1765,12 +1808,24 @@ class VideoStudio:
         prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
+        character_images=[]
+        character_list=self.project.get("characters",[])
+        char_ids=scene.get("character_ids")
+        if not isinstance(char_ids,list):
+            old_id=scene.get("character_id")
+            char_ids=[old_id] if isinstance(old_id,int) else []
+        for char_id in char_ids:
+            if isinstance(char_id,int) and 0<=char_id<len(character_list):
+                image_path=character_list[char_id].get("image","")
+                if image_path and Path(image_path).is_file():
+                    character_images.append(image_path)
+        scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
         self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
         self.set_status("Gerçek AI görseli ComfyUI ile üretiliyor...")
         def worker():
             try:
-                result=comfyui_generate_image(self.comfy_url_var.get(),workflow,prompt_text,folder,width,height)
+                result=comfyui_generate_image(self.comfy_url_var.get(),workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
                 self.root.after(0,lambda:self._comfy_visual_done(i,result,None))
             except Exception as exc:
                 message=str(exc)
