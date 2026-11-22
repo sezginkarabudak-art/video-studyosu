@@ -12,12 +12,9 @@ set "TARGET=%~1"
 if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
 
 echo Video Studyosu guncelleniyor...
-echo Aranan yeni dosya: Video Studyosu.exe
-
 if not defined SOURCE (
   echo HATA: Yeni program dosyasi bulunamadi.
   echo Guncelleme klasoru: %~dp0
-  echo Beklenen dosya adi: Video Studyosu.exe
   pause
   exit /b 10
 )
@@ -25,22 +22,34 @@ if not defined SOURCE (
 for %%I in ("%TARGET%") do set "TARGETDIR=%%~dpI"
 if not exist "%TARGETDIR%" mkdir "%TARGETDIR%"
 
-echo Yeni dosya: "%SOURCE%"
-echo Kurulum yeri: "%TARGET%"
-echo Programin kapanmasi bekleniyor...
-timeout /t 3 /nobreak >nul
+set "UPDATE_SOURCE=%SOURCE%"
+set "UPDATE_TARGET=%TARGET%"
+set "UPDATE_BACKUP=%TARGET%.backup"
+set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
 
-set "BACKUP=%TARGET%.backup"
-set "VBS=%TEMP%\VideoStudyosuUpdate_%RANDOM%.vbs"
 (
-  echo Set sh = CreateObject("WScript.Shell")
-  echo WScript.Sleep 1800
-  echo Set fso = CreateObject("Scripting.FileSystemObject")
-  echo If fso.FileExists("%TARGET%") Then fso.CopyFile "%TARGET%", "%BACKUP%", True
-  echo fso.CopyFile "%SOURCE%", "%TARGET%", True
-  echo sh.Run Chr(34) ^& "%TARGET%" ^& Chr(34), 1, False
-  echo fso.DeleteFile WScript.ScriptFullName
-) > "%VBS%"
+  echo $ErrorActionPreference = 'Stop'
+  echo $src = $env:UPDATE_SOURCE
+  echo $dst = $env:UPDATE_TARGET
+  echo $bak = $env:UPDATE_BACKUP
+  echo Start-Sleep -Seconds 3
+  echo $copied = $false
+  echo for ^($i = 0; $i -lt 25; $i++^) {
+  echo   try {
+  echo     if ^(Test-Path -LiteralPath $dst^) { Copy-Item -LiteralPath $dst -Destination $bak -Force }
+  echo     Copy-Item -LiteralPath $src -Destination $dst -Force
+  echo     $copied = $true
+  echo     break
+  echo   } catch { Start-Sleep -Milliseconds 800 }
+  echo }
+  echo if ^(-not $copied^) { throw 'Yeni EXE hedefe kopyalanamadi. Program tamamen kapali mi kontrol edin.' }
+  echo Start-Process -FilePath $dst
+  echo Start-Sleep -Seconds 2
+  echo Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+) > "%PS1%"
 
-start "" wscript.exe "%VBS%"
+echo Guncelleme uygulanacak:
+echo "%SOURCE%"
+echo "%TARGET%"
+start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
 exit /b 0
