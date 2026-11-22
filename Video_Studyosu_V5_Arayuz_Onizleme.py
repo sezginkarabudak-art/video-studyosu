@@ -2023,8 +2023,19 @@ class VideoStudio:
             messagebox.showinfo("Sahne seç","Önce görsel üretilecek sahneyi seç.")
             return
         workflow=self.comfy_workflow_var.get().strip()
-        if not workflow or not Path(workflow).is_file():
-            messagebox.showinfo("İş akışı gerekli","ComfyUI arayüzünden File > Export Workflow (API) ile JSON dışa aktar ve burada seç.")
+        automatic_workflow=not workflow
+        base_url=self.comfy_url_var.get().strip()
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
+        if automatic_workflow:
+            try:
+                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
+                self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
+            except Exception as exc:
+                messagebox.showerror("Görsel motoru hazır değil",str(exc))
+                self.comfy_status.config(text="Görsel motoru hazır değil: "+str(exc))
+                return
+        elif not Path(workflow).is_file():
+            messagebox.showerror("İş akışı bulunamadı","Seçilen JSON dosyası artık bulunamıyor. Otomatik mod için dosya seçimini temizle.")
             return
         if getattr(self,"comfy_busy",False):
             messagebox.showinfo("İşlem sürüyor","ComfyUI görsel üretimi zaten devam ediyor.")
@@ -2043,14 +2054,16 @@ class VideoStudio:
         prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
-        character_images=collect_character_reference_images(scene,self.project.get("characters",[]))
+        character_images=[] if automatic_workflow else collect_character_reference_images(scene,self.project.get("characters",[]))
+        if automatic_workflow and collect_character_reference_images(scene,self.project.get("characters",[])):
+            self.comfy_status.config(text="Otomatik üretim: karakter metin tanımı kullanılıyor; fotoğrafla yüz sabitleme için IPAdapter iş akışı gerekir.")
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
         self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
         self.set_status("Gerçek AI görseli ComfyUI ile üretiliyor...")
         def worker():
             try:
-                result=comfyui_generate_image(self.comfy_url_var.get(),workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
+                result=comfyui_generate_image(base_url,workflow,prompt_text,folder,width,height,reference_images=character_images,seed=scene_seed)
                 self.root.after(0,lambda:self._comfy_visual_done(i,result,None))
             except Exception as exc:
                 message=str(exc)
@@ -2063,8 +2076,19 @@ class VideoStudio:
         if not self.project.get("scenes"):
             messagebox.showinfo("Sahne yok","Önce metni sahnelere ayır.")
             return
-        if not workflow or not Path(workflow).is_file():
-            messagebox.showinfo("AI iş akışı gerekli","ComfyUI'de uyumlu bir görsel modeli ve API iş akışı hazırlayıp JSON dosyasını seç. AI üretimi için bu dosya zorunludur.")
+        automatic_workflow=not workflow
+        base_url=self.comfy_url_var.get().strip()
+        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
+        if automatic_workflow:
+            try:
+                workflow,checkpoint=create_default_comfyui_workflow(base_url,width,height)
+                self.comfy_status.config(text="Otomatik iş akışı hazır: "+Path(checkpoint).name)
+            except Exception as exc:
+                messagebox.showerror("Görsel motoru hazır değil",str(exc))
+                self.comfy_status.config(text="Görsel motoru hazır değil: "+str(exc))
+                return
+        elif not Path(workflow).is_file():
+            messagebox.showerror("İş akışı bulunamadı","Seçilen JSON dosyası bulunamadı. Otomatik mod için dosya seçimini temizle.")
             return
         if getattr(self,"comfy_busy",False):
             messagebox.showinfo("İşlem sürüyor","ComfyUI üretimi zaten devam ediyor.")
@@ -2073,7 +2097,6 @@ class VideoStudio:
         scenes=[dict(scene) for scene in self.project["scenes"]]
         characters=list(self.project.get("characters",[]))
         base_url=self.comfy_url_var.get().strip()
-        width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
         self.comfy_busy=True
         self.comfy_status.config(text=f"AI üretimi başladı: 0/{len(scenes)} sahne")
@@ -2091,7 +2114,7 @@ class VideoStudio:
                             "Do not use abstract shapes, text, captions, collages or graphic placeholders. "
                             +camera_cues+scene.get("text","")+" "+character_cues+" "+continuity_cues).strip()
                     seed=int(hashlib.sha256((str(index)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
-                    refs=collect_character_reference_images(scene,characters)
+                    refs=[] if automatic_workflow else collect_character_reference_images(scene,characters)
                     self.root.after(0,lambda n=index+1,total=len(scenes):self.comfy_status.config(text=f"AI görseli üretiliyor: {n}/{total}"))
                     result=comfyui_generate_image(base_url,workflow,prompt,folder,width,height,reference_images=refs,seed=seed)
                     results.append((index,result))
