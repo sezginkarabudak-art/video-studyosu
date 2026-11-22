@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 APP_NAME = "Karabudak Film Stüdyoları V5.6.0"
-APP_VERSION = "5.6.0"
+APP_VERSION = "5.6.1"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -1199,13 +1199,23 @@ class VideoStudio:
         box.pack(fill="x",anchor="n")
         ttk.Label(box,text=f"Kurulu sürüm: {APP_VERSION}",font=("Segoe UI",12,"bold")).pack(anchor="w",pady=(0,8))
         ttk.Label(box,text="Yeni sürümü kontrol et, indirme ve kurulum aşamalarını durum çubuğundan izle. Kurulum sırasında program kapanır ve işlem tamamlanınca yeniden açılır. Proje ve video klasörlerin korunur.",wraplength=760,justify="left").pack(anchor="w",pady=(0,14))
-        ttk.Button(box,text="Güncellemeleri kontrol et",command=self.check_for_updates).pack(anchor="w")
+        self.update_check_button = ttk.Button(box,text="Güncellemeleri kontrol et",command=self.check_for_updates)
+        self.update_check_button.pack(anchor="w")
+        self.update_status_var = tk.StringVar(value="Henüz kontrol edilmedi.")
+        ttk.Label(box,textvariable=self.update_status_var,wraplength=760,justify="left",foreground="#245b8f").pack(anchor="w",pady=(12,0))
         ttk.Label(self.update_tab,text="Projelerin ve dışa aktardığın videolar güncelleme sırasında korunur. Program dosyası değiştirilmeden önce yedeklenir.",foreground="#555",wraplength=760,justify="left").pack(anchor="w",pady=16)
+
+    def _set_update_status(self, message, checking=False):
+        self.update_status_var.set(message)
+        self.update_check_button.config(state=("disabled" if checking else "normal"))
 
     def check_for_updates(self):
         if self.busy:
+            self._set_update_status("Kontrol yapılamadı: Video hazırlanırken güncelleme kontrol edilemez.")
             messagebox.showinfo("Güncelleme", "Video hazırlanırken güncelleme kontrol edilemez.")
             return
+        self._set_update_status("GitHub üzerinde yeni sürüm kontrol ediliyor...", checking=True)
+        self.set_status("Güncelleme kontrol ediliyor...")
         threading.Thread(target=self._check_for_updates_worker, kwargs={"silent": False}, daemon=True).start()
 
     def _check_for_updates_worker(self, silent=True):
@@ -1218,23 +1228,36 @@ class VideoStudio:
             if not tag:
                 raise RuntimeError("GitHub'da yayımlanmış bir sürüm bulunamadı.")
             if self._version_tuple(tag) <= self._version_tuple(APP_VERSION):
-                if not silent: self.root.after(0, lambda: messagebox.showinfo("Güncelleme", f"Program güncel.\nKurulu sürüm: {APP_VERSION}"))
+                def current():
+                    self._set_update_status(f"Program güncel. Kurulu sürüm: {APP_VERSION} | Son sürüm: {tag}")
+                    self.set_status("Güncelleme kontrolü tamamlandı: program güncel.")
+                    if not silent:
+                        messagebox.showinfo("Güncelleme", f"Program güncel.\nKurulu sürüm: {APP_VERSION}\nSon sürüm: {tag}")
+                self.root.after(0, current)
                 return
             patch_name = f"VideoStudyosu_Patch_from_{APP_VERSION}.zip"
             asset = next((a for a in release.get("assets", []) if a.get("name") == patch_name), None)
-            if asset:
-                package_type = "yama"
-            else:
+            package_type = "yama" if asset else "tam"
+            if not asset:
                 asset = next((a for a in release.get("assets", []) if a.get("name") == UPDATE_ASSET), None)
-                package_type = "tam"
             if not asset:
                 raise RuntimeError("Yeni sürüm bulundu ancak uyumlu yama veya tam kurulum paketi yayımlanmamış.")
             download_url = asset.get("browser_download_url", "")
             if not download_url:
                 raise RuntimeError("Yeni sürüm paketi için indirme bağlantısı bulunamadı.")
-            self.root.after(0, lambda v=tag, p=package_type: self._ask_update(v, download_url, p))
+            def found():
+                self._set_update_status(f"Yeni sürüm bulundu: {tag} ({package_type} paket). Onay bekleniyor.")
+                self.set_status(f"Yeni sürüm bulundu: {tag}")
+                self._ask_update(tag, download_url, package_type)
+            self.root.after(0, found)
         except Exception as exc:
-            if not silent: self.root.after(0, lambda e=str(exc): messagebox.showerror("Güncelleme kontrolü", "Güncelleme kontrol edilemedi.\n" + e))
+            error_text = str(exc)
+            def failed():
+                self._set_update_status("Güncelleme kontrolü başarısız: " + error_text)
+                self.set_status("Güncelleme kontrolü başarısız.")
+                if not silent:
+                    messagebox.showerror("Güncelleme kontrolü", "Güncelleme kontrol edilemedi.\n" + error_text)
+            self.root.after(0, failed)
 
     @staticmethod
     def _version_tuple(value):
