@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Karabudak Film Stüdyoları V5.4.0"
-APP_VERSION = "5.4.0"
+APP_NAME = "Karabudak Film Stüdyoları V5.4.1"
+APP_VERSION = "5.4.1"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -664,7 +664,7 @@ class VideoStudio:
         box=ttk.LabelFrame(self.update_tab,text="Karabudak Film Stüdyoları güncelleme merkezi",padding=18)
         box.pack(fill="x",anchor="n")
         ttk.Label(box,text=f"Kurulu sürüm: {APP_VERSION}",font=("Segoe UI",12,"bold")).pack(anchor="w",pady=(0,8))
-        ttk.Label(box,text="Yeni sürümler açılışta otomatik kontrol edilir; bulunduğunda arka planda indirilip kurulur. Proje ve video klasörlerin korunur.",wraplength=760,justify="left").pack(anchor="w",pady=(0,14))
+        ttk.Label(box,text="Yeni sürümü kontrol et, indirme ve kurulum aşamalarını durum çubuğundan izle. Kurulum sırasında program kapanır ve işlem tamamlanınca yeniden açılır. Proje ve video klasörlerin korunur.",wraplength=760,justify="left").pack(anchor="w",pady=(0,14))
         ttk.Button(box,text="Güncellemeleri kontrol et",command=self.check_for_updates).pack(anchor="w")
         ttk.Label(self.update_tab,text="Projelerin ve dışa aktardığın videolar güncelleme sırasında korunur. Program dosyası değiştirilmeden önce yedeklenir.",foreground="#555",wraplength=760,justify="left").pack(anchor="w",pady=16)
 
@@ -708,28 +708,36 @@ class VideoStudio:
         try:
             if not download_url:
                 raise RuntimeError("İndirme bağlantısı bulunamadı.")
-            work = Path(tempfile.mkdtemp(prefix="VideoStudyosuUpdate_"))
+            self.root.after(0, lambda: self.set_status("Güncelleme indiriliyor..."))
+            work = Path(tempfile.mkdtemp(prefix="KarabudakFilmStudyoUpdate_"))
             archive = work / UPDATE_ASSET
-            req = urllib.request.Request(download_url, headers={"User-Agent": "VideoStudyosu-Updater"})
+            req = urllib.request.Request(download_url, headers={"User-Agent": "KarabudakFilmStudyo-Updater"})
             with urllib.request.urlopen(req, timeout=60) as response, open(archive, "wb") as out:
-                shutil.copyfileobj(response, out)
+                total = int(response.headers.get("Content-Length", 0) or 0)
+                done = 0
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        pct = int(done * 100 / total)
+                        self.root.after(0, lambda p=pct: self.set_status(f"Güncelleme indiriliyor: %{p}"))
+            self.root.after(0, lambda: self.set_status("Paket doğrulanıyor..."))
             with zipfile.ZipFile(archive, "r") as zf:
                 names = zf.namelist()
                 if "Video Studyosu.exe" not in names or "update_install.bat" not in names:
                     raise RuntimeError("Güncelleme paketi eksik veya hatalı.")
                 zf.extractall(work)
+            if not getattr(sys, "frozen", False):
+                raise RuntimeError("Otomatik EXE güncellemesi yalnızca kurulu masaüstü uygulamasında çalışır.")
+            target_exe = Path(sys.executable).resolve()
             bat = work / "update_install.bat"
-            exe = work / "Video Studyosu.exe"
-            if getattr(sys, "frozen", False):
-                target_exe = Path(sys.executable).resolve()
-            else:
-                raise RuntimeError("Otomatik EXE güncellemesi yalnızca kurulu masaüstü uygulamasında çalışır. İlk kurulum paketini kullanın.")
-            subprocess.Popen(
-                ["cmd.exe", "/c", str(bat), str(target_exe)],
-                cwd=str(work),
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            self.root.after(0, self.root.destroy)
+            self.root.after(0, lambda: self.set_status("Kurulum başlatılıyor; program kapanıp yeniden açılacak..."))
+            subprocess.Popen(["cmd.exe", "/c", str(bat), str(target_exe)], cwd=str(work),
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            self.root.after(1200, self.root.destroy)
         except Exception as exc:
             self.root.after(0, lambda e=str(exc): messagebox.showerror("Güncelleme başarısız", e))
 
@@ -949,7 +957,7 @@ class VideoStudio:
         ttk.Label(self.characters_tab,text="Karakter fotoğrafı ekle; aynı referans görselini istediğin sahnelere bağla. Bu yöntem karakteri yeniden çizmez, referans portresini sahnede gösterir.",wraplength=900).pack(anchor="w",pady=6)
         body=ttk.Frame(self.characters_tab); body.pack(fill="both",expand=True,pady=8)
         left=ttk.Frame(body); left.pack(side="left",fill="y")
-        self.character_list=tk.Listbox(left,width=34,height=18,exportselection=False); self.character_list.pack(fill="y",expand=True)
+        self.character_list=tk.Listbox(left,width=34,height=18,exportselection=False,selectmode="extended"); self.character_list.pack(fill="y",expand=True)
         self.character_list.bind("<<ListboxSelect>>",self.select_character)
         right=ttk.Frame(body,padding=(18,0)); right.pack(side="left",fill="both",expand=True)
         ttk.Label(right,text="Karakter adı").pack(anchor="w")
@@ -957,6 +965,9 @@ class VideoStudio:
         ttk.Label(right,text="Karakter notu / görünüş tarifi").pack(anchor="w")
         self.character_desc=tk.Text(right,height=6,wrap="word"); self.character_desc.pack(fill="x",pady=(2,10))
         self.character_image_label=ttk.Label(right,text="Referans fotoğrafı seçilmedi"); self.character_image_label.pack(anchor="w",pady=4)
+        self.character_preview_label=ttk.Label(right,text="Karakter ön izlemesi",anchor="center"); self.character_preview_label.pack(fill="x",pady=6)
+        self.character_preview_photo=None
+        ttk.Button(right,text="Ön izlemeyi yenile / yeniden oluştur",command=self.refresh_character_preview).pack(anchor="w",pady=4)
         row=ttk.Frame(right); row.pack(fill="x",pady=6)
         ttk.Button(row,text="Fotoğraf seç",command=self.choose_character_image).pack(side="left")
         ttk.Button(row,text="Karakteri kaydet",command=self.save_character).pack(side="left",padx=6)
@@ -986,11 +997,31 @@ class VideoStudio:
         self.character_name.set(c.get("name","")); self.character_image=c.get("image","")
         self.character_desc.delete("1.0","end"); self.character_desc.insert("1.0",c.get("description",""))
         self.character_image_label.config(text=Path(self.character_image).name if self.character_image else "Referans fotoğrafı seçilmedi")
+        self.refresh_character_preview()
 
     def choose_character_image(self):
         path=filedialog.askopenfilename(filetypes=[("Görsel","*.png *.jpg *.jpeg *.webp *.bmp")])
         if path:
-            self.character_image=path; self.character_image_label.config(text=Path(path).name)
+            self.character_image=path; self.character_image_label.config(text=Path(path).name); self.refresh_character_preview()
+
+    def refresh_character_preview(self):
+        """Show chosen portrait or a local concept card; this is not AI image generation."""
+        try:
+            if self.character_image and Path(self.character_image).exists():
+                im=Image.open(self.character_image).convert("RGB")
+                im.thumbnail((300,300),Image.Resampling.LANCZOS)
+            else:
+                name=self.character_name.get().strip() or "Yeni karakter"
+                desc=self.character_desc.get("1.0","end").strip()
+                target=PROJECT_ROOT/"karakter_onizleme_gecici.jpg"
+                make_original_visual(name+" "+desc,target,size=(480,300),seed=len(name),draw_text=True)
+                im=Image.open(target).convert("RGB")
+                im.thumbnail((300,190),Image.Resampling.LANCZOS)
+            self.character_preview_photo=ImageTk.PhotoImage(im)
+            self.character_preview_label.configure(image=self.character_preview_photo,text="")
+            self.set_status("Karakter ön izlemesi yenilendi.")
+        except Exception as exc:
+            self.character_preview_label.configure(image="",text="Ön izleme oluşturulamadı: "+str(exc))
 
     def save_character(self):
         name=self.character_name.get().strip()
@@ -1001,7 +1032,7 @@ class VideoStudio:
         item={"name":name,"description":desc,"image":self.character_image}
         if sel:self.project["characters"][sel[0]]=item
         else:self.project.setdefault("characters",[]).append(item)
-        self.refresh_characters(); self.set_status("Karakter kütüphaneye kaydedildi.")
+        self.refresh_characters(); self.character_list.selection_clear(0,"end"); self.character_list.selection_set(len(self.project["characters"])-1); self.refresh_character_preview(); self.set_status("Karakter kütüphaneye kaydedildi.")
 
     def delete_character(self):
         sel=self.character_list.curselection()
@@ -1011,11 +1042,14 @@ class VideoStudio:
         self.refresh_characters(); self.character_name.set(""); self.character_desc.delete("1.0","end")
 
     def assign_character(self):
-        cs=self.character_list.curselection(); ss=self.character_scene_combo.current()
+        cs=list(self.character_list.curselection()); ss=self.character_scene_combo.current()
         if not cs or ss<0 or ss>=len(self.project.get("scenes",[])):
-            messagebox.showinfo("Atama","Önce karakteri ve sahneyi seç."); return
-        self.project["scenes"][ss]["character_id"]=cs[0]
-        self.set_status(f"{self.project['characters'][cs[0]]['name']} karakteri {ss+1}. sahneye bağlandı.")
+            messagebox.showinfo("Atama","Bir veya daha fazla karakteri ve sahneyi seç."); return
+        scene=self.project["scenes"][ss]
+        scene["character_ids"]=cs
+        scene["character_id"]=cs[0]
+        names=", ".join(self.project["characters"][i]["name"] for i in cs)
+        self.set_status(f"{names} karakterleri {ss+1}. sahneye bağlandı.")
 
     def youtube_package(self):
         scenes=self.project.get("scenes",[])
@@ -1406,10 +1440,14 @@ class VideoStudio:
                                          request=scene.get("visual_request",""),draw_text=False)
                 else:
                     fit_image(original,size).save(img,quality=94)
-                char_id=scene.get("character_id")
                 chars=self.project.get("characters",[])
-                if isinstance(char_id,int) and 0 <= char_id < len(chars):
-                    char_img=str(assets/f"karakter_{idx:03d}.jpg")
+                char_ids=scene.get("character_ids")
+                if not isinstance(char_ids,list):
+                    old_id=scene.get("character_id")
+                    char_ids=[old_id] if isinstance(old_id,int) else []
+                valid_ids=[cid for cid in char_ids if isinstance(cid,int) and 0 <= cid < len(chars)]
+                for char_no,char_id in enumerate(valid_ids):
+                    char_img=str(assets/f"karakter_{idx:03d}_{char_no:02d}.jpg")
                     add_character_reference(img,chars[char_id],char_img)
                     img=char_img
 
