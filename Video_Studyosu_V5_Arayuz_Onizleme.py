@@ -8,8 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-APP_NAME = "Video Studyosu V5.3.2 - Görsel Stüdyo"
-APP_VERSION = "5.3.2"
+APP_NAME = "Video Studyosu V5.3.3 - Görsel Stüdyo"
+APP_VERSION = "5.3.3"
 GITHUB_REPO = "sezginkarabudak-art/video-studyosu"
 UPDATE_ASSET = "VideoStudyosu_Update.zip"
 HOME = Path.home()
@@ -412,10 +412,10 @@ class VideoStudio:
         style.configure("TProgressbar",background="#eeeeee",troughcolor=panel,bordercolor=line)
         style.configure("TSeparator",background=line)
         top=ttk.Frame(self.root,padding=10); top.pack(fill="x")
-        ttk.Label(top,text="VIDEO STUDYOSU V5.3.1",font=("Segoe UI",18,"bold")).pack(side="left")
+        ttk.Label(top,text="VIDEO STUDYOSU V5.3.3",font=("Segoe UI",18,"bold")).pack(side="left")
         ttk.Label(top,text="Sahneye özel görseller • Türkçe metin • Video kütüphanesi",foreground=muted).pack(side="left",padx=18)
         self.menu_button=ttk.Button(top,text="☰  MENÜ",command=self.toggle_menu)
-        self.menu_button.pack(side="right")
+        self.menu_button.pack(side="left", padx=(0,12))
         try: style.layout("Hidden.TNotebook.Tab", [])
         except Exception: pass
         style.configure("Hidden.TNotebook",background=bg,borderwidth=0)
@@ -465,31 +465,17 @@ class VideoStudio:
             self.menu_popup.destroy()
             self.menu_popup=None
             return
-        win=tk.Toplevel(self.root)
-        self.menu_popup=win
-        win.title("Video Studyosu Menü")
-        win.transient(self.root)
-        win.resizable(False,False)
-        win.configure(bg="#ffffff")
-        frame=ttk.Frame(win,padding=12)
-        frame.pack(fill="both",expand=True)
-        ttk.Label(frame,text="BÖLÜMLER",font=("Segoe UI",11,"bold")).pack(anchor="w",pady=(0,8))
+        # Menü ayrı bir pencere açmaz; ana uygulama yüzeyinin üzerinde açılan paneldir.
+        panel=ttk.Frame(self.root,padding=12,relief="solid")
+        self.menu_popup=panel
+        panel.configure(style="TFrame")
+        panel.place(x=10,y=58,width=270)
+        panel.lift()
+        ttk.Label(panel,text="BÖLÜMLER",font=("Segoe UI",11,"bold")).pack(anchor="w",pady=(0,8))
         items=[("Başlangıç",0),("Video düzenleme / sahneler",1),("Video kütüphanem",2),("Karakter stüdyosu",3),("Senarist",4),("Güncelleme",5),("Eski Videoyu Düzenle",6)]
         for label,index in items:
-            ttk.Button(frame,text=label,command=lambda i=index:self._select_tab(i)).pack(fill="x",pady=3)
-        win.update_idletasks()
-        x=self.root.winfo_rootx()+self.root.winfo_width()-win.winfo_width()-18
-        y=self.root.winfo_rooty()+58
-        win.geometry(f"+{max(0,x)}+{max(0,y)}")
-        win.bind("<FocusOut>",lambda e: self.root.after(180, self._close_menu_if_unfocused))
-        win.focus_force()
+            ttk.Button(panel,text=label,command=lambda i=index:self._select_tab(i)).pack(fill="x",pady=3)
 
-    def _close_menu_if_unfocused(self):
-        try:
-            if self.menu_popup is not None and self.menu_popup.winfo_exists() and self.root.focus_get() is not self.menu_popup:
-                self.menu_popup.destroy()
-                self.menu_popup=None
-        except Exception: pass
 
     def _select_tab(self, index):
         for w in self.root.winfo_children():
