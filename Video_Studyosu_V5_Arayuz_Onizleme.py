@@ -3,7 +3,7 @@
 Video Studyosu V4 - API'siz görsel kompozisyon + video üretimi
 Not: Görseller, Pillow ile oluşturulan özgün grafik kompozisyonlardır; AI image generation değildir.
 """
-import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile
+import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile, io
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -284,6 +284,42 @@ def install_visual_engine(progress=None):
     return comfy
 
 
+def ensure_visual_models_and_reference_support(install, progress=None):
+    """Install the realistic SDXL checkpoint and IPAdapter Plus reference stack automatically."""
+    install=Path(install)
+    models=install/"models"
+    checkpoint=models/"checkpoints"/"RealVisXL_V5.0_fp16.safetensors"
+    checkpoint.parent.mkdir(parents=True,exist_ok=True)
+    if not checkpoint.is_file() or checkpoint.stat().st_size<6_000_000_000:
+        if progress: progress("Fotogerçekçi RealVisXL modeli indiriliyor (6,94 GB)")
+        _download_file("https://huggingface.co/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors",checkpoint,progress,"RealVisXL")
+    digest=hashlib.sha256()
+    with open(checkpoint,"rb") as stream:
+        for chunk in iter(lambda:stream.read(8*1024*1024),b""): digest.update(chunk)
+    if digest.hexdigest().lower()!="6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80":
+        checkpoint.unlink(missing_ok=True)
+        raise RuntimeError("RealVisXL model SHA256 doğrulaması başarısız; dosya güvenlik için silindi.")
+    nodes=install/"custom_nodes"
+    nodes.mkdir(parents=True,exist_ok=True)
+    node=nodes/"ComfyUI_IPAdapter_plus"
+    if not (node/"__init__.py").is_file():
+        if progress: progress("Karakter referans sistemi kuruluyor")
+        data=urllib.request.urlopen("https://codeload.github.com/cubiq/ComfyUI_IPAdapter_plus/zip/refs/heads/main",timeout=60).read()
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            archive.extractall(nodes)
+        extracted=nodes/"ComfyUI_IPAdapter_plus-main"
+        if extracted.exists(): extracted.rename(node)
+    clip=models/"clip_vision"/"CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+    adapter=models/"ipadapter"/"ip-adapter-plus_sdxl_vit-h.safetensors"
+    if not clip.is_file() or clip.stat().st_size<100_000_000:
+        if progress: progress("Karakter tanıma modeli indiriliyor")
+        _download_file("https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",clip,progress,"CLIP Vision")
+    if not adapter.is_file() or adapter.stat().st_size<100_000_000:
+        if progress: progress("Karakter referans ağırlıkları indiriliyor")
+        _download_file("https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",adapter,progress,"IPAdapter Plus")
+    return checkpoint
+
+
 def ensure_comfyui_running(base_url="http://127.0.0.1:8188", startup_timeout=240, progress=None):
     """Install if absent, start the local engine and wait for its API."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
@@ -293,6 +329,7 @@ def ensure_comfyui_running(base_url="http://127.0.0.1:8188", startup_timeout=240
     install=find_comfyui_installation()
     if install is None:
         install=install_visual_engine(progress)
+    ensure_visual_models_and_reference_support(install,progress)
     py_candidates=[install.parent/"python_embeded"/"python.exe",install/"python_embeded"/"python.exe"]
     py=next((p for p in py_candidates if p.is_file()),None)
     if py is None: raise RuntimeError("Görsel motorunun Python çalışma ortamı bulunamadı.")
