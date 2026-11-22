@@ -2,54 +2,63 @@
 setlocal EnableExtensions
 chcp 65001 >nul
 title Video Studyosu - Guncelleme
-
 set "SOURCE="
 for /r "%~dp0" %%F in ("Video Studyosu.exe") do (
   if not defined SOURCE set "SOURCE=%%~fF"
 )
-
 set "TARGET=%~1"
 if not defined TARGET set "TARGET=%LOCALAPPDATA%\VideoStudyosu\Video Studyosu.exe"
-
-echo Video Studyosu guncelleniyor...
 if not defined SOURCE (
   echo HATA: Yeni program dosyasi bulunamadi.
-  echo Guncelleme klasoru: %~dp0
   pause
   exit /b 10
 )
-
 for %%I in ("%TARGET%") do set "TARGETDIR=%%~dpI"
 if not exist "%TARGETDIR%" mkdir "%TARGETDIR%"
-
 set "UPDATE_SOURCE=%SOURCE%"
 set "UPDATE_TARGET=%TARGET%"
-set "UPDATE_BACKUP=%TARGET%.backup"
 set "PS1=%TEMP%\VideoStudyosuUpdate_%RANDOM%.ps1"
-
 (
   echo $ErrorActionPreference = 'Stop'
-  echo $src = $env:UPDATE_SOURCE
-  echo $dst = $env:UPDATE_TARGET
-  echo $bak = $env:UPDATE_BACKUP
-  echo Start-Sleep -Seconds 3
-  echo $copied = $false
-  echo for ^($i = 0; $i -lt 25; $i++^) {
-  echo   try {
-  echo     if ^(Test-Path -LiteralPath $dst^) { Copy-Item -LiteralPath $dst -Destination $bak -Force }
-  echo     Copy-Item -LiteralPath $src -Destination $dst -Force
-  echo     $copied = $true
-  echo     break
-  echo   } catch { Start-Sleep -Milliseconds 800 }
+  echo $logDir = Join-Path $env:LOCALAPPDATA 'VideoStudyosu'
+  echo New-Item -ItemType Directory -Force -Path $logDir ^| Out-Null
+  echo $log = Join-Path $logDir 'update.log'
+  echo function Write-Log^($m^) { Add-Content -LiteralPath $log -Value ^("[$(Get-Date -Format o)] $m"^) }
+  echo try {
+  echo   $src = $env:UPDATE_SOURCE
+  echo   $dst = $env:UPDATE_TARGET
+  echo   Write-Log "Updater started. Source=$src Target=$dst"
+  echo   if ^(-not ^(Test-Path -LiteralPath $src -PathType Leaf^)^) { throw "Update EXE not found: $src" }
+  echo   $dstDir = Split-Path -Parent $dst
+  echo   New-Item -ItemType Directory -Force -Path $dstDir ^| Out-Null
+  echo   $tmp = Join-Path $dstDir 'Video Studyosu.new.exe'
+  echo   $bak = "$dst.backup"
+  echo   $unlocked = $false
+  echo   for ^($i=0; $i -lt 40; $i++^) {
+  echo     try {
+  echo       if ^(Test-Path -LiteralPath $dst^) {
+  echo         $fs = [System.IO.File]::Open^($dst, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None^)
+  echo         $fs.Dispose^(^)
+  echo       }
+  echo       $unlocked = $true
+  echo       break
+  echo     } catch { Start-Sleep -Milliseconds 750 }
+  echo   }
+  echo   if ^(-not $unlocked^) { throw 'Old application is still running or the target file is locked.' }
+  echo   Copy-Item -LiteralPath $src -Destination $tmp -Force
+  echo   if ^((Get-Item -LiteralPath $tmp^).Length -lt 1000000^) { throw 'Downloaded EXE is unexpectedly small; update cancelled.' }
+  echo   if ^(Test-Path -LiteralPath $dst^) { Copy-Item -LiteralPath $dst -Destination $bak -Force }
+  echo   Move-Item -LiteralPath $tmp -Destination $dst -Force
+  echo   Write-Log "EXE replaced successfully. Bytes=$((Get-Item -LiteralPath $dst).Length)"
+  echo   Start-Process -FilePath $dst
+  echo   Write-Log 'New application launched.'
+  echo } catch {
+  echo   $msg = $_.Exception.Message
+  echo   Write-Log "FAILED: $msg"
+  echo   Add-Type -AssemblyName System.Windows.Forms
+  echo   [System.Windows.Forms.MessageBox]::Show^("Update failed: $msg. Log: $log", 'Video Studyosu updater', 'OK', 'Error'^) ^| Out-Null
   echo }
-  echo if ^(-not $copied^) { throw 'Yeni EXE hedefe kopyalanamadi. Program tamamen kapali mi kontrol edin.' }
-  echo Start-Process -FilePath $dst
-  echo Start-Sleep -Seconds 2
   echo Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
 ) > "%PS1%"
-
-echo Guncelleme uygulanacak:
-echo "%SOURCE%"
-echo "%TARGET%"
 start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
 exit /b 0
