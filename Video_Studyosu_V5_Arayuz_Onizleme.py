@@ -623,6 +623,35 @@ def make_motion_preview_frame(source, frame_no, frame_count=72):
     return Image.alpha_composite(frame,atmosphere).convert("RGB")
 
 
+
+def camera_motion_filter(request, size, fps=30):
+    """Return a gentle Ken Burns move selected from the scene's camera direction request."""
+    text=(request or "").lower()
+    w,h=size
+    zoom="min(zoom+0.00045,1.08)"
+    x="(iw-iw/zoom)/2"
+    y="(ih-ih/zoom)/2"
+    span=str(max(1,fps*8))
+    if any(k in text for k in ["sola kay","sola pan","kamera sola","pan left"]):
+        x="(iw-iw/zoom)*(0.85-0.70*on/"+span+")"
+    elif any(k in text for k in ["sağa kay","sağa pan","kamera sağa","pan right"]):
+        x="(iw-iw/zoom)*(0.15+0.70*on/"+span+")"
+    elif any(k in text for k in ["yukarı kay","yukarı pan","kamera yukarı","pan up"]):
+        y="(ih-ih/zoom)*(0.85-0.70*on/"+span+")"
+    elif any(k in text for k in ["aşağı kay","aşağı pan","kamera aşağı","pan down"]):
+        y="(ih-ih/zoom)*(0.15+0.70*on/"+span+")"
+    elif any(k in text for k in ["geri çekil","zoom out","uzaklaşan kamera"]):
+        zoom="max(1.0,1.08-on*0.00045)"
+    elif any(k in text for k in ["yaklaş","kameraya yaklaş","zoom in","ileri dolly"]):
+        zoom="min(zoom+0.00065,1.12)"
+    return (
+        f"scale={w*2}:{h*2},"
+        f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={w}x{h}:fps={fps},"
+        "eq=contrast=1.06:saturation=0.94,vignette=angle=PI/5,"
+        "noise=alls=2:allf=t+u,format=yuv420p"
+    )
+
+
 def run_ffmpeg(args):
     cmd=[ffmpeg(), "-y", *args]
     p=subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -2107,13 +2136,13 @@ class VideoStudio:
                     m=re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)",probe.stderr)
                     dur=(int(m.group(1))*3600+int(m.group(2))*60+float(m.group(3))) if m else max(4,len(scene["text"])/13)
                     frame=str(assets/f"clip_{idx:03d}.mp4")
-                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},eq=contrast=1.06:saturation=0.94,vignette=angle=PI/5,noise=alls=2:allf=t+u,format=yuv420p"
+                    vf=camera_motion_filter(scene.get("visual_request",""),size,fps)
                     run_ffmpeg(["-loop","1","-i",img,"-i",a,"-vf",vf,"-t",str(max(2,dur)),"-r",str(fps),"-c:v","libx264","-preset","medium","-b:v","8M","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-shortest",frame])
                 else:
                     # Subtitle-only: show each translated scene for a readable fixed duration.
                     dur=max(4,min(12,len(scene["text"])/18))
                     frame=str(assets/f"clip_{idx:03d}.mp4")
-                    vf=f"scale={size[0]*2}:{size[1]*2},zoompan=z='min(zoom+0.0005,1.08)':d=1:s={size[0]}x{size[1]}:fps={fps},eq=contrast=1.06:saturation=0.94,vignette=angle=PI/5,noise=alls=2:allf=t+u,format=yuv420p"
+                    vf=camera_motion_filter(scene.get("visual_request",""),size,fps)
                     run_ffmpeg(["-loop","1","-i",img,"-vf",vf,"-t",str(dur),"-r",str(fps),"-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",frame])
                 clips.append(frame)
 
