@@ -9,8 +9,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.6.3"
-APP_VERSION = "5.6.3"
+APP_NAME = "Karabudak Film Stüdyoları V5.6.4"
+APP_VERSION = "5.6.4"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
