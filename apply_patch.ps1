@@ -3,55 +3,73 @@ param(
   [Parameter(Mandatory=$true)][string]$Package
 )
 $ErrorActionPreference = 'Stop'
-$targetDir = Split-Path -Parent $Target
-$log = Join-Path $env:LOCALAPPDATA 'VideoStudyosu\update.log'
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
-function Log([string]$m) { Add-Content -LiteralPath $log -Value "[$(Get-Date -Format o)] $m" }
-$backup = Join-Path $env:LOCALAPPDATA ('VideoStudyosu\UpdateBackups\' + (Get-Date -Format 'yyyyMMdd_HHmmss'))
-$changed = New-Object System.Collections.Generic.List[string]
+$targetDir = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Target))
+$logDir = Join-Path $env:LOCALAPPDATA 'VideoStudyosu'
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$log = Join-Path $logDir 'update.log'
+function Log([string]$m) { Add-Content -LiteralPath $log -Encoding UTF8 -Value "[$(Get-Date -Format o)] $m" }
+function Resolve-SafePath([string]$root, [string]$relative) {
+  if ([string]::IsNullOrWhiteSpace($relative)) { throw 'Yama dosya yolu bos.' }
+  $normalized = $relative.Replace('/', '\')
+  if ([System.IO.Path]::IsPathRooted($normalized)) { throw "Mutlak yama yolu reddedildi: $relative" }
+  foreach ($segment in $normalized.Split('\')) {
+    if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.' -or $segment -eq '..') { throw "Gecersiz yama yolu parcasi: $relative" }
+    if ($segment.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) { throw "Dosya adinda Windows tarafindan kabul edilmeyen karakter var: $relative" }
+  }
+  $rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
+  $full = [System.IO.Path]::GetFullPath((Join-Path $rootFull $normalized))
+  if (-not $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Yama hedef klasorunun disina cikiyor: $relative" }
+  return $full
+}
+$backup = Join-Path $logDir ('UpdateBackups\' + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+$changed = New-Object System.Collections.Generic.List[object]
 try {
-  $manifestPath = Join-Path $Package 'manifest.json'
-  $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-  if (-not $manifest.files -or $manifest.files.Count -lt 1) { throw 'Yama manifest dosyası boş.' }
+  Log "Patch start. Target=$Target Package=$Package"
+  $manifest = Get-Content -LiteralPath (Join-Path $Package 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  if (-not $manifest.files -or $manifest.files.Count -lt 1) { throw 'Yama manifest dosyasi bos.' }
+  $validated = New-Object System.Collections.Generic.List[object]
+  foreach ($item in $manifest.files) {
+    $rel = [string]$item.path
+    try {
+      $src = Resolve-SafePath (Join-Path $Package 'payload') $rel
+      $dst = Resolve-SafePath $targetDir $rel
+      if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw 'Paket icerisinde dosya bulunamadi.' }
+      $actual = (Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($actual -ne ([string]$item.sha256).ToLowerInvariant()) { throw 'SHA256 dogrulamasi basarisiz.' }
+      $validated.Add([pscustomobject]@{ Relative=$rel; Source=$src; Destination=$dst })
+    } catch { throw "Yama dosyasi kontrol edilemedi [$rel]: $($_.Exception.Message)" }
+  }
+  $unlocked = $false
   for ($i=0; $i -lt 40; $i++) {
     try {
       if (Test-Path -LiteralPath $Target) {
         $stream = [System.IO.File]::Open($Target,[System.IO.FileMode]::Open,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None)
         $stream.Dispose()
       }
+      $unlocked = $true
       break
     } catch { Start-Sleep -Milliseconds 750 }
   }
-  if (Test-Path -LiteralPath $Target) {
-    try { $stream = [System.IO.File]::Open($Target,[System.IO.FileMode]::Open,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None); $stream.Dispose() }
-    catch { throw 'Program dosyası kilitli. Program tamamen kapatılmadı.' }
-  }
-  foreach ($item in $manifest.files) {
-    $rel = [string]$item.path
-    if ([string]::IsNullOrWhiteSpace($rel) -or $rel.Contains('..') -or [System.IO.Path]::IsPathRooted($rel)) { throw "Geçersiz yama yolu: $rel" }
-    $src = Join-Path (Join-Path $Package 'payload') $rel
-    $dst = Join-Path $targetDir $rel
-    if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw "Yama dosyası eksik: $rel" }
-    $actual = (Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne ([string]$item.sha256).ToLowerInvariant()) { throw "Yama dosyası doğrulanamadı: $rel" }
-  }
+  if (-not $unlocked) { throw 'Program dosyasi hala kullanimda. Programi tamamen kapatip tekrar deneyin.' }
   New-Item -ItemType Directory -Force -Path $backup | Out-Null
-  foreach ($item in $manifest.files) {
-    $rel = [string]$item.path
-    $src = Join-Path (Join-Path $Package 'payload') $rel
-    $dst = Join-Path $targetDir $rel
-    $bak = Join-Path $backup $rel
-    if (Test-Path -LiteralPath $dst -PathType Leaf) {
-      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $bak) | Out-Null
-      Copy-Item -LiteralPath $dst -Destination $bak -Force
+  foreach ($entry in $validated) {
+    $rel = $entry.Relative
+    $dst = $entry.Destination
+    $bak = Resolve-SafePath $backup $rel
+    $existed = Test-Path -LiteralPath $dst -PathType Leaf
+    if ($existed) {
+      New-Item -ItemType Directory -Force -Path ([System.IO.Path]::GetDirectoryName($bak)) | Out-Null
+      [System.IO.File]::Copy($dst,$bak,$true)
     }
-    $changed.Add($rel)
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
-    Copy-Item -LiteralPath $src -Destination $dst -Force
+    $changed.Add([pscustomobject]@{ Destination=$dst; Backup=$bak; Existed=$existed; Relative=$rel })
+    New-Item -ItemType Directory -Force -Path ([System.IO.Path]::GetDirectoryName($dst)) | Out-Null
+    [System.IO.File]::Copy($entry.Source,$dst,$true)
     $check = (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($check -ne ([string]$item.sha256).ToLowerInvariant()) { throw "Kurulum doğrulaması başarısız: $rel" }
+    $expected = (Get-FileHash -LiteralPath $entry.Source -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($check -ne $expected) { throw "Kurulum dogrulamasi basarisiz: $rel" }
+    Log "Applied: $rel"
   }
-  Log ("Patch applied: " + $manifest.from_version + " -> " + $manifest.to_version + "; files=" + $changed.Count)
+  Log ("PATCH SUCCESS: " + $manifest.from_version + " -> " + $manifest.to_version + "; files=" + $changed.Count)
   Start-Process -FilePath $Target
   exit 0
 } catch {
@@ -59,16 +77,21 @@ try {
   Log ("PATCH FAILED: " + $failure)
   $rollback = $changed.ToArray()
   [array]::Reverse($rollback)
-  foreach ($rel in $rollback) {
-    $dst = Join-Path $targetDir $rel
-    $bak = Join-Path $backup $rel
-    if (Test-Path -LiteralPath $bak -PathType Leaf) {
-      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
-      Copy-Item -LiteralPath $bak -Destination $dst -Force
-    } elseif (Test-Path -LiteralPath $dst -PathType Leaf) { Remove-Item -LiteralPath $dst -Force }
+  foreach ($entry in $rollback) {
+    try {
+      if ($entry.Existed -and (Test-Path -LiteralPath $entry.Backup -PathType Leaf)) {
+        New-Item -ItemType Directory -Force -Path ([System.IO.Path]::GetDirectoryName($entry.Destination)) | Out-Null
+        [System.IO.File]::Copy($entry.Backup,$entry.Destination,$true)
+      } elseif (Test-Path -LiteralPath $entry.Destination -PathType Leaf) { Remove-Item -LiteralPath $entry.Destination -Force }
+      Log "Rollback: $($entry.Relative)"
+    } catch { Log "ROLLBACK ERROR [$($entry.Relative)]: $($_.Exception.Message)" }
   }
   Log 'Rollback finished.'
-  Add-Type -AssemblyName System.Windows.Forms
-  [System.Windows.Forms.MessageBox]::Show(("Yama uygulanamadı; eski dosyalar geri yüklendi." + [Environment]::NewLine + $failure),"Video Studyosu güncelleme",'OK','Error') | Out-Null
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    $nl = [Environment]::NewLine
+    $message = 'Yama uygulanamadi; eski dosyalar geri yuklendi.' + $nl + $nl + 'Hata: ' + $failure + $nl + $nl + 'Ayrinti: ' + $log
+    [System.Windows.Forms.MessageBox]::Show($message,'Video Studyosu guncelleme','OK','Error') | Out-Null
+  } catch { }
   exit 1
 }
