@@ -105,6 +105,46 @@ def build_scene_continuity_prompt(scene, scene_index, scenes):
             "explicitly establishes a change.")
 
 
+def remap_character_scene_links(scenes, deleted_index):
+    """Remove one character and keep legacy and multi-character scene indices aligned."""
+    for scene in scenes:
+        ids=scene.get("character_ids")
+        if isinstance(ids,list):
+            adjusted=[]
+            for cid in ids:
+                if not isinstance(cid,int) or cid==deleted_index:
+                    continue
+                adjusted.append(cid-1 if cid>deleted_index else cid)
+            if adjusted:
+                scene["character_ids"]=adjusted
+                scene["character_id"]=adjusted[0]
+            else:
+                scene.pop("character_ids",None)
+                scene.pop("character_id",None)
+        else:
+            cid=scene.get("character_id")
+            if isinstance(cid,int):
+                if cid==deleted_index: scene.pop("character_id",None)
+                elif cid>deleted_index: scene["character_id"]=cid-1
+
+
+def collect_character_reference_images(scene, characters):
+    """Return existing unique reference image paths for the characters assigned to a scene."""
+    ids=scene.get("character_ids")
+    if not isinstance(ids,list):
+        old_id=scene.get("character_id")
+        ids=[old_id] if isinstance(old_id,int) else []
+    images=[]
+    for char_id in ids:
+        if isinstance(char_id,int) and 0<=char_id<len(characters):
+            character=characters[char_id]
+            paths=[character.get("image","")]+list(character.get("reference_images",[]))
+            for path in paths:
+                if path and Path(path).is_file() and path not in images:
+                    images.append(path)
+    return images
+
+
 def comfyui_upload_reference_image(base_url, image_path):
     """Upload a character reference to ComfyUI input storage and return its server-side name."""
     path=Path(image_path)
@@ -1658,25 +1698,7 @@ class VideoStudio:
         deleted=sel[0]
         del self.project["characters"][deleted]
         # Keep every scene's character links aligned with the shifted character list.
-        for scene in self.project.get("scenes",[]):
-            ids=scene.get("character_ids")
-            if isinstance(ids,list):
-                adjusted=[]
-                for cid in ids:
-                    if not isinstance(cid,int) or cid==deleted:
-                        continue
-                    adjusted.append(cid-1 if cid>deleted else cid)
-                if adjusted:
-                    scene["character_ids"]=adjusted
-                    scene["character_id"]=adjusted[0]
-                else:
-                    scene.pop("character_ids",None)
-                    scene.pop("character_id",None)
-            else:
-                cid=scene.get("character_id")
-                if isinstance(cid,int):
-                    if cid==deleted: scene.pop("character_id",None)
-                    elif cid>deleted: scene["character_id"]=cid-1
+        remap_character_scene_links(self.project.get("scenes",[]),deleted)
         self.character_image=""
         self.character_reference_images=[]
         self.character_list.selection_clear(0,"end")
@@ -1966,19 +1988,7 @@ class VideoStudio:
         prompt_text=("Cinematic high quality film still, detailed realistic environment, professional composition. "+camera_cues+scene.get("text","")+" "+request+" "+character_cues+" "+continuity_cues).strip()
         width,height=(1024,1792) if self.ratio.get()=="9:16" else (1280,720)
         folder=PROJECT_ROOT/safe_name(self.name_var.get())/"gorseller"
-        character_images=[]
-        character_list=self.project.get("characters",[])
-        char_ids=scene.get("character_ids")
-        if not isinstance(char_ids,list):
-            old_id=scene.get("character_id")
-            char_ids=[old_id] if isinstance(old_id,int) else []
-        for char_id in char_ids:
-            if isinstance(char_id,int) and 0<=char_id<len(character_list):
-                char=character_list[char_id]
-                image_paths=[char.get("image","")]+list(char.get("reference_images",[]))
-                for image_path in image_paths:
-                    if image_path and Path(image_path).is_file() and image_path not in character_images:
-                        character_images.append(image_path)
+        character_images=collect_character_reference_images(scene,self.project.get("characters",[]))
         scene_seed=int(hashlib.sha256((str(i)+"|"+scene.get("text","")+"|"+request).encode("utf-8")).hexdigest()[:8],16)
         self.comfy_busy=True
         self.comfy_status.config(text="ComfyUI'ye bağlanıyor; üretim sürerken program kullanılabilir.")
