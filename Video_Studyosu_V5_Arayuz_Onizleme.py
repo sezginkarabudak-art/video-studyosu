@@ -312,6 +312,16 @@ def make_original_visual(text, path, size=(1280,720), seed=0, request="", draw_t
     im=Image.alpha_composite(im.convert("RGBA"),overlay).convert("RGB")
     # Her sahneye metin tabanli ayri on plan kompozisyonu ekle.
     draw_scene_subjects(ImageDraw.Draw(im, "RGBA"), text + " " + request, w, h, kind, seed)
+    # Soft cinematic vignette: keep the focal area readable while adding depth.
+    vignette=Image.new("RGBA",(w,h),(0,0,0,0))
+    vd=ImageDraw.Draw(vignette)
+    max_layers=18
+    for layer in range(max_layers):
+        inset=int(min(w,h)*0.012*layer)
+        alpha=int(2+layer*1.15)
+        vd.rectangle((inset,inset,w-inset,h-inset),outline=(0,0,0,alpha),width=max(2,int(min(w,h)*0.012)))
+    vignette=vignette.filter(ImageFilter.GaussianBlur(max(8,int(min(w,h)*0.035))))
+    im=Image.alpha_composite(im.convert("RGBA"),vignette).convert("RGB")
     # Optional original Turkish scene label; disabled during video rendering
     # because the selected subtitle language is composited separately.
     if draw_text:
