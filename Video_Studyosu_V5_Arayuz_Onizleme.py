@@ -600,13 +600,13 @@ def expand_ipadapter_workflow_for_references(workflow, reference_count):
 
 
 def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200, reference_images=None, seed=0):
-    """Submit an exported ComfyUI API workflow, wait for its output and save the image locally."""
+    """Submit a ComfyUI API workflow, preserve its model-safe latent size, and save the result."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
     with open(workflow_path,"r",encoding="utf-8") as handle:
         workflow=json.load(handle)
     if not isinstance(workflow,dict) or not workflow:
         raise ValueError("ComfyUI API iş akışı boş veya geçersiz.")
-    # Update common built-in text, seed, and latent-size nodes without assuming fixed node IDs.
+    # Update common built-in text and seed nodes without assuming fixed node IDs.
     text_nodes=[]
     negative_nodes=[]
     reference_images=[str(p) for p in (reference_images or []) if p and Path(p).is_file()]
