@@ -173,6 +173,21 @@ class VisualEngineTests(unittest.TestCase):
             self.assertEqual(submitted["10"]["inputs"]["image"], ["12", 0])
             self.assertEqual(submitted["5"]["inputs"]["model"], ["10", 0])
 
+    def test_optional_ipadapter_branch_is_removed_without_character_references(self):
+        workflow = {
+            "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "realvisXL.safetensors"}},
+            "5": {"class_type": "KSampler", "inputs": {"model": ["9", 0]}},
+            "8": {"class_type": "IPAdapterUnifiedLoader", "inputs": {"model": ["1", 0], "preset": "PLUS"}},
+            "9": {"class_type": "IPAdapter", "inputs": {
+                "model": ["8", 0], "ipadapter": ["8", 1], "image": ["10", 0], "weight": 0.85
+            }},
+        }
+        nodes = app.expand_ipadapter_workflow_for_references(workflow, 0)
+        self.assertEqual(nodes, [])
+        self.assertNotIn("8", workflow)
+        self.assertNotIn("9", workflow)
+        self.assertEqual(workflow["5"]["inputs"]["model"], ["1", 0])
+
 
 if __name__ == "__main__":
     unittest.main()
