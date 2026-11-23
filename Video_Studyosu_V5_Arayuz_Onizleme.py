@@ -3,14 +3,14 @@
 Video Studyosu V4 - API'siz görsel kompozisyon + video üretimi
 Not: Görseller, Pillow ile oluşturulan özgün grafik kompozisyonlardır; AI image generation değildir.
 """
-import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile, io, concurrent.futures
+import os, sys, json, math, random, hashlib, threading, subprocess, shutil, re, time, urllib.request, urllib.parse, urllib.error, zipfile, tempfile, io, concurrent.futures, copy
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from video_effects import get_video_effect_filter, VIDEO_EFFECT_PRESETS
 
-APP_NAME = "Karabudak Film Stüdyoları V5.7.1"
-APP_VERSION = "5.7.1"
+APP_NAME = "Karabudak Film Stüdyoları V5.7.2"
+APP_VERSION = "5.7.2"
  
 PLATFORM_PROFILES = {
     "YouTube yatay video": {"size": (1920,1080), "ratio": "16:9", "fps": 30, "format": "MP4 / H.264 / AAC", "max_seconds": None},
@@ -547,6 +547,58 @@ def create_default_comfyui_workflow(base_url, width=1024, height=1024):
     return str(target),checkpoint
 
 
+def expand_ipadapter_workflow_for_references(workflow, reference_count):
+    """Build a chained IPAdapter path with one image input per character reference."""
+    if reference_count <= 0:
+        return []
+    adapters = {
+        str(node_id): node for node_id, node in workflow.items()
+        if isinstance(node, dict) and "IPAdapter" in str(node.get("class_type", ""))
+        and isinstance(node.get("inputs"), dict) and "image" in node["inputs"]
+    }
+    if not adapters:
+        raise ValueError("Bu ComfyUI iş akışında IPAdapter görüntü uygulama düğümü bulunamadı. Karakter referansı için IPAdapter Plus kurulu olmalı.")
+    samplers = [
+        node for node in workflow.values()
+        if isinstance(node, dict) and node.get("class_type") in ("KSampler", "KSamplerAdvanced")
+        and isinstance(node.get("inputs"), dict)
+    ]
+    terminal_ids = []
+    for sampler in samplers:
+        model = sampler["inputs"].get("model")
+        if isinstance(model, (list, tuple)) and model and str(model[0]) in adapters:
+            terminal_ids.append(str(model[0]))
+    if not terminal_ids:
+        raise ValueError("IPAdapter düğümü KSampler model girişine bağlı değil; karakter referans zinciri kurulamadı.")
+    terminal_id = terminal_ids[0]
+    chain = []
+    cursor = terminal_id
+    while cursor in adapters and cursor not in chain:
+        chain.append(cursor)
+        model = adapters[cursor]["inputs"].get("model")
+        cursor = str(model[0]) if isinstance(model, (list, tuple)) and model else ""
+    chain.reverse()
+    if not chain:
+        raise ValueError("IPAdapter karakter referans zinciri çözümlenemedi.")
+    numeric_ids = [int(key) for key in workflow if str(key).isdigit()]
+    next_id = max(numeric_ids or [0]) + 1
+    while len(chain) < reference_count:
+        previous_id = chain[-1]
+        cloned = copy.deepcopy(adapters[previous_id])
+        cloned["inputs"]["model"] = [previous_id, 0]
+        new_id = str(next_id)
+        next_id += 1
+        workflow[new_id] = cloned
+        adapters[new_id] = cloned
+        chain.append(new_id)
+    final_id = chain[reference_count - 1]
+    for sampler in samplers:
+        model = sampler["inputs"].get("model")
+        if isinstance(model, (list, tuple)) and model and str(model[0]) in adapters:
+            sampler["inputs"]["model"] = [final_id, 0]
+    return [(node_id, adapters[node_id]["inputs"]) for node_id in chain[:reference_count]]
+
+
 def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, width=1024, height=1024, timeout=1200, reference_images=None, seed=0):
     """Submit an exported ComfyUI API workflow, wait for its output and save the image locally."""
     base_url=(base_url or "http://127.0.0.1:8188").strip().rstrip("/")
@@ -558,7 +610,6 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
     text_nodes=[]
     negative_nodes=[]
     reference_images=[str(p) for p in (reference_images or []) if p and Path(p).is_file()]
-    ipadapter_nodes=[]
     for node_id,node in workflow.items():
         if not isinstance(node,dict): continue
         kind=node.get("class_type","")
@@ -571,18 +622,13 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
             if "seed" in inputs: inputs["seed"]=int(seed or 0) % (2**32)
             negative=inputs.get("negative")
             if isinstance(negative,(list,tuple)) and negative: negative_nodes.append(str(negative[0]))
-        if "IPAdapter" in kind and isinstance(inputs,dict) and "image" in inputs:
-            ipadapter_nodes.append((str(node_id),inputs))
-        if kind in ("EmptyLatentImage","EmptySD3LatentImage") and isinstance(inputs,dict):
-            if "width" in inputs: inputs["width"]=int(width)
-            if "height" in inputs: inputs["height"]=int(height)
+        # Keep the latent dimensions selected by create_default_comfyui_workflow.
+        # Those SDXL-safe dimensions are derived from the requested aspect ratio;
+        # replacing them with the UI canvas size can trigger avoidable VRAM errors.
     # Attach uploaded references to actual IPAdapter image inputs, not merely to unused LoadImage nodes.
     if reference_images:
-        if not ipadapter_nodes:
-            raise ValueError("Bu ComfyUI iş akışında IPAdapter görüntü uygulama düğümü bulunamadı. IPAdapter Unified Loader sonrasına IPAdapter Advanced (veya IPAdapter) düğümü ekle; image girişini bu düğümde açık bırak.")
-        if len(reference_images)>len(ipadapter_nodes):
-            raise ValueError(f"{len(reference_images)} karakter referansı seçildi ancak iş akışında yalnızca {len(ipadapter_nodes)} IPAdapter görüntü düğümü var. Her referans için ayrı IPAdapter düğümü ekle.")
-        # Validate workflow capacity before uploading files to ComfyUI.
+        # Extend the adapter chain automatically for every saved character angle.
+        ipadapter_nodes=expand_ipadapter_workflow_for_references(workflow,len(reference_images))
         uploaded_refs=[comfyui_upload_reference_image(base_url,reference) for reference in reference_images]
         next_id=max([int(k) for k in workflow if str(k).isdigit()] or [0])+1
         for (adapter_id,adapter_inputs),image_name in zip(ipadapter_nodes,uploaded_refs):
