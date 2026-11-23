@@ -95,7 +95,7 @@ class VisualEngineTests(unittest.TestCase):
             workflow_path.write_text(json.dumps(workflow), encoding="utf-8")
             captured = {}
             def fake_open(request, timeout=30):
-                url = request.full_url
+                url = request.full_url if hasattr(request, "full_url") else request
                 if url.endswith("/prompt"):
                     captured["workflow"] = json.loads(request.data.decode("utf-8"))["prompt"]
                     return _Response({"prompt_id": "test-prompt"})
@@ -142,7 +142,7 @@ class VisualEngineTests(unittest.TestCase):
             captured = {}
             upload_count = [0]
             def fake_open(request, timeout=30):
-                url = request.full_url
+                url = request.full_url if hasattr(request, "full_url") else request
                 if url.endswith("/upload/image"):
                     upload_count[0] += 1
                     return _Response({"name": f"reference_{upload_count[0]}.png"})
