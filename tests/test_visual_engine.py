@@ -157,7 +157,9 @@ class VisualEngineTests(unittest.TestCase):
                         "7": {"images": [{"filename": "generated.png", "type": "output"}]}
                     }}})
                 if "/view?" in url:
-                    return _RawResponse(b"fake-png")
+                    buffer = io.BytesIO()
+                    app.Image.new("RGB", (2, 2)).save(buffer, format="PNG")
+                    return _RawResponse(buffer.getvalue())
                 raise AssertionError("Unexpected URL: " + url)
             mocked_open.side_effect = fake_open
             app.comfyui_generate_image(
