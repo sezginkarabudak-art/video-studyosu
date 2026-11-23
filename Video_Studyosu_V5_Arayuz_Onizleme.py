@@ -549,13 +549,48 @@ def create_default_comfyui_workflow(base_url, width=1024, height=1024):
 
 def expand_ipadapter_workflow_for_references(workflow, reference_count):
     """Build a chained IPAdapter path with one image input per character reference."""
-    if reference_count <= 0:
-        return []
     adapters = {
         str(node_id): node for node_id, node in workflow.items()
         if isinstance(node, dict) and "IPAdapter" in str(node.get("class_type", ""))
         and isinstance(node.get("inputs"), dict) and "image" in node["inputs"]
     }
+    if reference_count <= 0:
+        # The default workflow contains an optional IPAdapter branch whose
+        # placeholder LoadImage node is supplied only when character refs exist.
+        # Remove a dangling optional branch and reconnect KSampler to the base model.
+        if not adapters:
+            return []
+        image_links_valid = all(
+            isinstance(node["inputs"].get("image"), (list, tuple))
+            and node["inputs"]["image"]
+            and str(node["inputs"]["image"][0]) in workflow
+            for node in adapters.values()
+        )
+        if image_links_valid:
+            return []
+        loader_ids = {
+            str(node_id) for node_id, node in workflow.items()
+            if isinstance(node, dict) and node.get("class_type") == "IPAdapterUnifiedLoader"
+        }
+        for node in workflow.values():
+            if not isinstance(node, dict) or node.get("class_type") not in ("KSampler", "KSamplerAdvanced"):
+                continue
+            inputs = node.get("inputs", {})
+            model = inputs.get("model")
+            visited = set()
+            while isinstance(model, (list, tuple)) and model and str(model[0]) in adapters and str(model[0]) not in visited:
+                visited.add(str(model[0]))
+                model = adapters[str(model[0])]["inputs"].get("model")
+            if isinstance(model, (list, tuple)) and model and str(model[0]) in loader_ids:
+                loader = workflow.get(str(model[0]), {})
+                model = loader.get("inputs", {}).get("model")
+            if isinstance(model, (list, tuple)) and len(model) >= 2:
+                inputs["model"] = list(model)
+        for node_id in list(adapters):
+            workflow.pop(node_id, None)
+        for node_id in loader_ids:
+            workflow.pop(node_id, None)
+        return []
     if not adapters:
         raise ValueError("Bu ComfyUI iş akışında IPAdapter görüntü uygulama düğümü bulunamadı. Karakter referansı için IPAdapter Plus kurulu olmalı.")
     samplers = [
@@ -626,9 +661,9 @@ def comfyui_generate_image(base_url, workflow_path, prompt_text, output_dir, wid
         # Those SDXL-safe dimensions are derived from the requested aspect ratio;
         # replacing them with the UI canvas size can trigger avoidable VRAM errors.
     # Attach uploaded references to actual IPAdapter image inputs, not merely to unused LoadImage nodes.
+    ipadapter_nodes=expand_ipadapter_workflow_for_references(workflow,len(reference_images))
     if reference_images:
         # Extend the adapter chain automatically for every saved character angle.
-        ipadapter_nodes=expand_ipadapter_workflow_for_references(workflow,len(reference_images))
         uploaded_refs=[comfyui_upload_reference_image(base_url,reference) for reference in reference_images]
         next_id=max([int(k) for k in workflow if str(k).isdigit()] or [0])+1
         for (adapter_id,adapter_inputs),image_name in zip(ipadapter_nodes,uploaded_refs):
